@@ -16,7 +16,7 @@
 namespace py = pybind11;
 
 namespace nvqir {
-void toggleBaseProfile();
+void toggleQIRProfile();
 } // namespace nvqir
 
 namespace cudaq {
@@ -27,14 +27,14 @@ void bindTestUtils(py::module &mod, LinkedLibraryHolder &holder) {
 
   // Vision for all this
   //
-  // cudaq.testing.toggleBaseProfile()
+  // cudaq.testing.toggleQIRProfile()
   // qubits, context = cudaq.testing.initialize(numQubits, 1000)
   // .. use llvmlite.jit to execute kernel function
   // results = cudaq.testing.finalize(qubits, context);
   // results.dump()
 
   testingSubmodule.def(
-      "toggleBaseProfile", [&]() { nvqir::toggleBaseProfile(); }, "");
+      "toggleQIRProfile", [&]() { nvqir::toggleQIRProfile(); }, "");
 
   testingSubmodule.def(
       "initialize", [&](std::size_t numQubits, std::size_t numShots) {
@@ -50,7 +50,7 @@ void bindTestUtils(py::module &mod, LinkedLibraryHolder &holder) {
                                        cudaq::ExecutionContext *context) {
     holder.getSimulator("qpp")->deallocateQubits(qubits);
     holder.getSimulator("qpp")->resetExecutionContext();
-    nvqir::toggleBaseProfile();
+    nvqir::toggleQIRProfile();
     // Pybind will delete the context bc its been wrapped in a unique_ptr
     return context->result;
   });
