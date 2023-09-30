@@ -22,7 +22,7 @@ namespace cudaq::opt {
 
 // Pipeline builder to convert Quake to QIR.
 template <bool QIRProfile = false>
-void addPipelineToQIR(mlir::PassManager &pm) {
+void addPipelineToQIR(mlir::PassManager &pm, const std::string &convertTo) {
   pm.addNestedPass<mlir::func::FuncOp>(cudaq::opt::createQuakeAddDeallocs());
   pm.addNestedPass<mlir::func::FuncOp>(
       cudaq::opt::createCombineQuantumAllocations());
@@ -30,7 +30,7 @@ void addPipelineToQIR(mlir::PassManager &pm) {
   pm.addPass(mlir::createCSEPass());
   pm.addPass(cudaq::opt::createConvertToQIRPass());
   if constexpr (QIRProfile) {
-    cudaq::opt::addQIRProfilePipeline(pm);
+    cudaq::opt::addQIRProfilePipeline(pm, convertTo);
   }
 }
 
