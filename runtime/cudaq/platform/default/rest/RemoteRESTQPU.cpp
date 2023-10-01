@@ -165,7 +165,9 @@ public:
   bool isSimulator() override { return emulate; }
 
   /// @brief Return true if the current backend supports conditional feedback
-  bool supportsConditionalFeedback() override { return false; }
+  bool supportsConditionalFeedback() override {
+    return codegenTranslation == "qir-adaptive";
+  }
 
   /// Provide the number of shots
   void setShots(int _nShots) override {
