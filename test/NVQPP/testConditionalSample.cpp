@@ -7,6 +7,7 @@
  ******************************************************************************/
 
 // RUN: nvq++ --enable-mlir %s -o out_testifstmts.x && ./out_testifstmts.x
+// RUN: nvq++ --target quantinuum --emulate %s -o out_testifstmts.x && ./out_testifstmts.x
 
 // The test here is the assert statement. 
 

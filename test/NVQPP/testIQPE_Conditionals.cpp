@@ -7,6 +7,7 @@
  ******************************************************************************/
 
 // RUN: nvq++ --enable-mlir %s -o out_testifstmts_iqpe.x && ./out_testifstmts_iqpe.x | FileCheck %s && rm out_testifstmts_iqpe.x
+// RUN: nvq++ --target quantinuum --emulate %s -o out_testifstmts_iqpe.x && ./out_testifstmts_iqpe.x | FileCheck %s && rm out_testifstmts_iqpe.x
 
 #include <cudaq.h>
 
