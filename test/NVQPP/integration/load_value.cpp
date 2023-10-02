@@ -23,8 +23,10 @@ __qpu__ void load_value(unsigned value) {
 }
 
 int main() {
-  for (auto i = 0; i < 16; ++i) {
+  for (auto i = 0; i < 4; ++i) {
     auto result = cudaq::sample(1000, load_value, i);
+    result.dump();
+    fflush(0);
 
 #ifndef SYNTAX_CHECK
     std::cout << result.most_probable() << '\n';

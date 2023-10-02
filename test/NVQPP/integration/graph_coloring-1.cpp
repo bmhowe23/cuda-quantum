@@ -90,6 +90,8 @@ __qpu__ void grover(double theta) {
 int main() {
   double theta = 2. * std::acos(1. / std::sqrt(3));
   auto result = cudaq::sample(1000, grover, theta);
+  result.dump();
+  fflush(0);
 
 #ifndef SYNTAX_CHECK
   std::vector<std::string> strings;

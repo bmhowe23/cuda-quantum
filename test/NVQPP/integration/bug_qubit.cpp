@@ -29,6 +29,8 @@ struct simple_x {
 
 int main() {
   auto result = cudaq::sample(simple_x{});
+  result.dump();
+  fflush(0);
 
 #ifndef SYNTAX_CHECK
   std::cout << result.most_probable() << '\n';

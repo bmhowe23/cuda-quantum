@@ -27,6 +27,8 @@ __qpu__ void foo() {
 
 int main() {
   auto result = cudaq::sample(1000, foo);
+  result.dump();
+  fflush(0);
 
 #ifndef SYNTAX_CHECK
   std::cout << result.most_probable() << '\n';

@@ -45,6 +45,8 @@ __qpu__ void grover() {
 
 int main() {
   auto result = cudaq::sample(1000, grover);
+  result.dump();
+  fflush(0);
 
 #ifndef SYNTAX_CHECK
   std::vector<std::string> strings;

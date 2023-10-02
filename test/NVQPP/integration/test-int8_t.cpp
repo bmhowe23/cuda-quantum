@@ -22,6 +22,8 @@ struct variable_qreg {
 int main() {
   for (auto i = 1; i < 5; ++i) {
     auto result = cudaq::sample(1000, variable_qreg{}, i);
+    result.dump();
+    fflush(0);
 
 #ifndef SYNTAX_CHECK
     std::cout << result.most_probable() << '\n';
