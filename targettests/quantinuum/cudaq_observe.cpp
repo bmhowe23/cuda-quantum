@@ -1,1 +1,0 @@
-../../test/NVQPP/cudaq_observe.cpp

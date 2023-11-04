@@ -18,11 +18,16 @@ on:
       single_test_name:
         type: string
         required: false
-        description: 'Single test (e.g., targettests/quantinuum/load_value.cpp). Runs default tests if left blank'
+        description: 'Single test (e.g., test/NVQPP/load_value.cpp). Runs default tests if left blank'
       target_machine:
         type: string
         required: false
-        description: 'Target machine (e.g., H1-1E).'
+        description: 'Target machine (e.g., H1-1E). Required if selecting only Quantinuum'
+      override_sha:
+        type: boolean
+        required: true
+        default: false
+        description: 'Pull tests and test list from this branch instead of published cuda-quantum:latest image'
   schedule:
     - cron: 0 3 * * *
 
@@ -36,31 +41,39 @@ jobs:
       options: --user root
 
     steps:
-      - name: Get commit SHA
-        id: commit-sha
+      - name: Get SHA to fetch
+        id: commit-ref
         run: |
-          echo "sha=$(cat $CUDA_QUANTUM_PATH/assets/build_info | grep -o 'source-sha: \S*' | cut -d ' ' -f 2)" >> $GITHUB_OUTPUT
+          if ${{ inputs.override_sha }}; then
+            echo "ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=$(cat $CUDA_QUANTUM_PATH/assets/build_info | grep -o 'source-sha: \S*' | cut -d ' ' -f 2)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get code
         uses: actions/checkout@v3
         with:
-          ref: ${{ steps.commit-sha.outputs.sha }}
+          ref: ${{ steps.commit-ref.outputs.ref }}
           fetch-depth: 1
 
-      - name: Get tests
+      - name: Get list of tests
         id: gettests
         run: |
           if [ -n "${{ inputs.single_test_name }}" ]; then
             if [ -e ${{ inputs.single_test_name }} ]; then
-              echo "testlist=${{ inputs.single_test_name }}" >> $GITHUB_OUTPUT
+              for target in ionq iqm oqc quantinuum; do
+                echo "testlist_${target}=${{ inputs.single_test_name }}" >> $GITHUB_OUTPUT
+              done
             else
               # User's request test does not exit
               echo "::error::File ${{ inputs.single_test_name}} not found"
               exit 1
             fi
           else
-            filelist="targettests/*/*.cpp"
-            echo "testlist=$filelist" >> $GITHUB_OUTPUT
+            for target in ionq iqm oqc quantinuum; do
+              filelist=$(cat test/NVQPP/integration.json | sed -re "s|//.*||" | jq -r ".${target} | join(\" \")")
+              echo "testlist_${target}=$filelist" >> $GITHUB_OUTPUT
+            done
           fi
 
       - name: Setup quantinum account
@@ -79,27 +92,23 @@ jobs:
           export CUDAQ_LOG_LEVEL="info"
           set +e # Allow script to keep going through errors
           test_err_sum=0
-          for filename in ${{ steps.gettests.outputs.testlist }}; do
-            case $filename in
-              targettests/quantinuum/*)
-                [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
-                nvq++ -v $filename -DSYNTAX_CHECK --target quantinuum --quantinuum-machine H1-1SC
-                test_status=$?
-                if [ $test_status -eq 0 ]; then
-                  ./a.out
-                  test_status=$?
-                  if [ $test_status -eq 0 ]; then
-                    echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
-                    test_err_sum=$((test_err_sum+1))
-                  fi
-                else
-                  echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
-                  test_err_sum=$((test_err_sum+1))
-                fi
-              ;;
-            esac
+          for filename in ${{ steps.gettests.outputs.testlist_quantinuum }}; do
+            [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
+            nvq++ -v $filename -DSYNTAX_CHECK --target quantinuum --quantinuum-machine H1-1SC
+            test_status=$?
+            if [ $test_status -eq 0 ]; then
+              ./a.out
+              test_status=$?
+              if [ $test_status -eq 0 ]; then
+                echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
+                test_err_sum=$((test_err_sum+1))
+              fi
+            else
+              echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
+              test_err_sum=$((test_err_sum+1))
+            fi
           done
           set -e # Re-enable exit code error checking
           if [ ! $test_err_sum -eq 0 ]; then
@@ -117,27 +126,23 @@ jobs:
           export CUDAQ_LOG_LEVEL="info"
           set +e # Allow script to keep going through errors
           test_err_sum=0
-          for filename in ${{ steps.gettests.outputs.testlist }}; do
-            case $filename in
-              targettests/ionq/*)
-                [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
-                nvq++ -v $filename --target ionq
-                test_status=$?
-                if [ $test_status -eq 0 ]; then
-                  ./a.out
-                  test_status=$?
-                  if [ $test_status -eq 0 ]; then
-                    echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
-                    test_err_sum=$((test_err_sum+1))
-                  fi
-                else
-                  echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
-                  test_err_sum=$((test_err_sum+1))
-                fi
-              ;;
-            esac
+          for filename in ${{ steps.gettests.outputs.testlist_ionq }}; do
+            [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
+            nvq++ -v $filename --target ionq
+            test_status=$?
+            if [ $test_status -eq 0 ]; then
+              ./a.out
+              test_status=$?
+              if [ $test_status -eq 0 ]; then
+                echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
+                test_err_sum=$((test_err_sum+1))
+              fi
+            else
+              echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
+              test_err_sum=$((test_err_sum+1))
+            fi
           done
           set -e # Re-enable exit code error checking
           if [ ! $test_err_sum -eq 0 ]; then
@@ -161,28 +166,23 @@ jobs:
           export CUDAQ_LOG_LEVEL="info"
           set +e # Allow script to keep going through errors
           test_err_sum=0
-          for filename in ${{ steps.gettests.outputs.testlist }}; do
+          for filename in ${{ steps.gettests.outputs.testlist_iqm }}; do
             [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
-            # Only the following tests are currently supported on IQM
-            case $filename in
-              targettests/iqm/*)
-                nvq++ -DSYNTAX_CHECK --target iqm --iqm-machine Adonis $filename
-                test_status=$?
-                if [ $test_status -eq 0 ]; then
-                  ./a.out
-                  test_status=$?
-                  if [ $test_status -eq 0 ]; then
-                    echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
-                    test_err_sum=$((test_err_sum+1))
-                  fi
-                else
-                  echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
-                  test_err_sum=$((test_err_sum+1))
-                fi
-              ;;
-            esac
+            nvq++ -DSYNTAX_CHECK --target iqm --iqm-machine Adonis $filename
+            test_status=$?
+            if [ $test_status -eq 0 ]; then
+              ./a.out
+              test_status=$?
+              if [ $test_status -eq 0 ]; then
+                echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
+                test_err_sum=$((test_err_sum+1))
+              fi
+            else
+              echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
+              test_err_sum=$((test_err_sum+1))
+            fi
           done
           set -e # Re-enable exit code error checking
           cortex auth logout -f
@@ -202,28 +202,23 @@ jobs:
           export OQC_PASSWORD="${{ secrets.OQC_PASSWORD }}"
           set +e # Allow script to keep going through errors
           test_err_sum=0
-          for filename in ${{ steps.gettests.outputs.testlist }}; do
+          for filename in ${{ steps.gettests.outputs.testlist_oqc }}; do
             [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
-            # Only the following tests are currently supported on OQC
-            case $filename in
-              targettests/oqc/*)
-                nvq++ -DSYNTAX_CHECK --target oqc $filename
-                test_status=$?
-                if [ $test_status -eq 0 ]; then
-                  ./a.out
-                  test_status=$?
-                  if [ $test_status -eq 0 ]; then
-                    echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
-                  else
-                    echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
-                    test_err_sum=$((test_err_sum+1))
-                  fi
-                else
-                  echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
-                  test_err_sum=$((test_err_sum+1))
-                fi
-              ;;
-            esac
+            nvq++ -DSYNTAX_CHECK --target oqc $filename
+            test_status=$?
+            if [ $test_status -eq 0 ]; then
+              ./a.out
+              test_status=$?
+              if [ $test_status -eq 0 ]; then
+                echo ":white_check_mark: Successfully ran test: $filename" >> $GITHUB_STEP_SUMMARY
+              else
+                echo ":x: Test failed (failed to execute): $filename" >> $GITHUB_STEP_SUMMARY
+                test_err_sum=$((test_err_sum+1))
+              fi
+            else
+              echo ":x: Test failed (failed to compile): $filename" >> $GITHUB_STEP_SUMMARY
+              test_err_sum=$((test_err_sum+1))
+            fi
           done
           set -e # Re-enable exit code error checking
           if [ ! $test_err_sum -eq 0 ]; then
@@ -240,16 +235,9 @@ jobs:
         # don't want to run this on a simple Syntax Check machine.
         if: inputs.target == 'quantinuum' && github.event_name == 'workflow_dispatch'
         run: |
-          if ${{inputs.target == 'ionq'}}; then
-            export IONQ_API_KEY="${{ secrets.IONQ_API_KEY }}"
-          fi
-          for filename in ${{ steps.gettests.outputs.testlist }}; do
+          for filename in ${{ steps.gettests.outputs.testlist_quantinuum }}; do
             [ -e "$filename" ] || echo "::error::Couldn't find files ($filename)"
-            case $filename in
-              targettests/quantinuum/*)
-                nvq++ -v $filename --target ${{ inputs.target }} --${{ inputs.target }}-machine ${{ inputs.target_machine }}
-                CUDAQ_LOG_LEVEL=info ./a.out
-              ;;
-            esac
+            nvq++ -v $filename --target ${{ inputs.target }} --${{ inputs.target }}-machine ${{ inputs.target_machine }}
+            CUDAQ_LOG_LEVEL=info ./a.out
           done
         shell: bash

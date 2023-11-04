@@ -1,0 +1,111 @@
+// ========================================================================== //
+// Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                 //
+// All rights reserved.                                                       //
+//                                                                            //
+// This source code and the accompanying materials are made available under   //
+// the terms of the Apache License 2.0 which accompanies this distribution.   //
+// ========================================================================== //
+
+// Comments like this are allowed because we strip them out with
+// `sed -re "s|//.*||"` before parsing the file.
+
+// These tests are run by integration_tests.yml. A simple way to test this
+// script for bad references is to run the follow command and look for errors: 
+//   for target in ionq iqm oqc quantinuum; do echo "*** $target ***"; filelist=$(cat test/NVQPP/integration.json | sed -re "s|//.*||" | jq -r ".${target} | join(\" \")"); for f in $filelist; do ls $f; done; done
+
+{
+    "ionq":
+    [
+        "test/NVQPP/bug_qubit.cpp",
+        "test/NVQPP/callable_kernel_arg.cpp",
+        //"test/NVQPP/conditional_sample.cpp", // IonQ is not adaptive profile
+        "test/NVQPP/graph_coloring-1.cpp",
+        "test/NVQPP/graph_coloring.cpp",
+        "test/NVQPP/int8_t.cpp",
+        "test/NVQPP/int8_t_free_func.cpp",
+        "test/NVQPP/if_jit.cpp",
+        "test/NVQPP/load_value.cpp",
+        "test/NVQPP/qspan_slices.cpp",
+        "test/NVQPP/sudoku_2x2-1.cpp",
+        "test/NVQPP/sudoku_2x2-bit_names.cpp",
+        "test/NVQPP/sudoku_2x2-reg_name.cpp",
+        "test/NVQPP/sudoku_2x2.cpp",
+        "test/NVQPP/swap_gate.cpp",
+        "test/NVQPP/cudaq_observe.cpp",
+        "test/NVQPP/variable_size_qreg.cpp"
+    ],
+    "iqm":
+    [
+        // The following tests are disabled because the demo server only supports 5 qubits
+        // and the test tries to use more.
+        // - test/NVQPP/graph_coloring-1.cpp
+        // - test/NVQPP/graph_coloring.cpp
+        // - test/NVQPP/sudoku_2x2-1.cpp
+        // - test/NVQPP/sudoku_2x2-bit_names.cpp
+        // - test/NVQPP/sudoku_2x2-reg_name.cpp
+        // - test/NVQPP/sudoku_2x2.cpp
+        "test/NVQPP/bug_qubit.cpp",
+        //"test/NVQPP/conditional_sample.cpp", // IQM is not adaptive profile
+        "test/NVQPP/callable_kernel_arg.cpp",
+        //"test/NVQPP/graph_coloring-1.cpp",
+        //"test/NVQPP/graph_coloring.cpp",
+        "test/NVQPP/if_jit.cpp",
+        "test/NVQPP/int8_t.cpp",
+        "test/NVQPP/int8_t_free_func.cpp",
+        "test/NVQPP/load_value.cpp",
+        "test/NVQPP/qspan_slices.cpp",
+        //"test/NVQPP/sudoku_2x2-1.cpp",
+        //"test/NVQPP/sudoku_2x2-bit_names.cpp",
+        //"test/NVQPP/sudoku_2x2-reg_name.cpp",
+        //"test/NVQPP/sudoku_2x2.cpp",
+        "test/NVQPP/swap_gate.cpp",
+        "test/NVQPP/cudaq_observe.cpp",
+        "test/NVQPP/variable_size_qreg.cpp"
+    ],
+    "oqc":
+    [
+        // The following tests are disabled because sandbox only supports 12 qubits and the
+        // test tries to use more.
+        // - test/NVQPP/graph_coloring-1.cpp
+        // - test/NVQPP/graph_coloring.cpp
+        // The following test is disabled due to https://github.com/NVIDIA/cuda-quantum/issues/695
+        // - test/NVQPP/cudaq_observe.cpp
+        "test/NVQPP/bug_qubit.cpp",
+        "test/NVQPP/callable_kernel_arg.cpp",
+        //"test/NVQPP/conditional_sample.cpp", // OQC is not adaptive profile
+        //"test/NVQPP/cudaq_observe.cpp",
+        //"test/NVQPP/graph_coloring-1.cpp"
+        //"test/NVQPP/graph_coloring.cpp",
+        "test/NVQPP/if_jit.cpp",
+        "test/NVQPP/int8_t.cpp",
+        "test/NVQPP/int8_t_free_func.cpp",
+        "test/NVQPP/load_value.cpp",
+        "test/NVQPP/qspan_slices.cpp",
+        "test/NVQPP/sudoku_2x2-1.cpp",
+        "test/NVQPP/sudoku_2x2-bit_names.cpp",
+        "test/NVQPP/sudoku_2x2-reg_name.cpp",
+        "test/NVQPP/sudoku_2x2.cpp",
+        "test/NVQPP/swap_gate.cpp",
+        "test/NVQPP/variable_size_qreg.cpp"
+    ],
+    "quantinuum":
+    [
+        "test/NVQPP/bug_qubit.cpp",
+        "test/NVQPP/callable_kernel_arg.cpp",
+        "test/NVQPP/conditional_sample.cpp",
+        "test/NVQPP/cudaq_observe.cpp",
+        "test/NVQPP/graph_coloring-1.cpp",
+        "test/NVQPP/graph_coloring.cpp",
+        "test/NVQPP/if_jit.cpp",
+        "test/NVQPP/int8_t.cpp",
+        "test/NVQPP/int8_t_free_func.cpp",
+        "test/NVQPP/load_value.cpp",
+        "test/NVQPP/qspan_slices.cpp",
+        "test/NVQPP/sudoku_2x2-1.cpp",
+        "test/NVQPP/sudoku_2x2-bit_names.cpp",
+        "test/NVQPP/sudoku_2x2-reg_name.cpp",
+        "test/NVQPP/sudoku_2x2.cpp",
+        "test/NVQPP/swap_gate.cpp",
+        "test/NVQPP/variable_size_qreg.cpp"
+    ]
+}

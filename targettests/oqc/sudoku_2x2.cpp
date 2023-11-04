@@ -1,1 +1,0 @@
-../../test/NVQPP/sudoku_2x2.cpp
