@@ -11,11 +11,13 @@
 #define N 3
 #define NUM_PHY_QUBITS (2*N*N - 1)
 
+// Grid coordinates
 struct dim2 {
   float x = 0.0f;
   float y = 0.0f;
 };
 
+// Forward declarations
 struct DataQubit;
 struct StabilizerQubit;
 
@@ -23,11 +25,8 @@ struct StabilizerQubit {
   StabilizerQubit() = default;
   StabilizerQubit(dim2 c) : grid_coord(c), type(X) {}
 
-  enum StabilizerType {
-    X,
-    Z
-  };
-  
+  enum StabilizerType { X, Z };
+
   // Note: coordinates for stabilizer qubits are expected to be a.5, where a is
   // an integer. Values like -0.5 are acceptable, too.
   dim2 grid_coord{0.5f, 0.5f};
@@ -45,10 +44,12 @@ struct DataQubit {
 
   dim2 grid_coord{0.0f, 0.0f};
   int global_id = -1;
-  StabilizerQubit *NE = nullptr;
-  StabilizerQubit *NW = nullptr;
-  StabilizerQubit *SE = nullptr;
-  StabilizerQubit *SW = nullptr;
+
+  // These don't seem to be needed
+  // StabilizerQubit *NE = nullptr;
+  // StabilizerQubit *NW = nullptr;
+  // StabilizerQubit *SE = nullptr;
+  // StabilizerQubit *SW = nullptr;
 };
 
 class LogicalQubit {
@@ -136,19 +137,19 @@ public:
         int iNE = calcNeighborIx(r + 1, c + 1);
         if (iSW >= 0) {
           stabilizerQubits[i].SW = &dataQubits[iSW];
-          dataQubits[iSW].NE = &stabilizerQubits[i];
+          // dataQubits[iSW].NE = &stabilizerQubits[i];
         }
         if (iSE >= 0) {
           stabilizerQubits[i].SE = &dataQubits[iSE];
-          dataQubits[iSE].NW = &stabilizerQubits[i];
+          // dataQubits[iSE].NW = &stabilizerQubits[i];
         }
         if (iNW >= 0) {
           stabilizerQubits[i].NW = &dataQubits[iNW];
-          dataQubits[iNW].SE = &stabilizerQubits[i];
+          // dataQubits[iNW].SE = &stabilizerQubits[i];
         }
         if (iNE >= 0) {
           stabilizerQubits[i].NE = &dataQubits[iNE];
-          dataQubits[iNE].SW = &stabilizerQubits[i];
+          // dataQubits[iNE].SW = &stabilizerQubits[i];
         }
         i++; // get ready for next iteration
       }
@@ -303,14 +304,29 @@ struct myround {
     }
   }
 
-  auto operator()(int n, bool performHFirst) {
+  auto operator()(int n, bool performLogicalXFirst) {
     cudaq::qubit q[NUM_PHY_QUBITS];
     LogicalQubit s(N);
 
-    if (performHFirst)
-      for (auto qi : s.dataVec)
-        //h(q[qi->global_id]);
-        rx(0.9, q[qi->global_id]);
+    if (performLogicalXFirst) {
+      if (1) {
+        for (auto qi : s.dataVec) {
+          // Perform X on column 0. This has the effect of performing a "logical
+          // X" ($X_L$).
+          if (qi->grid_coord.x == 0) {
+            x(q[qi->global_id]);
+          }
+        }
+      } else {
+        for (auto qi : s.dataVec) {
+          // Perform Z on row 0. This has the effect of performing a "logical
+          // Z" ($Z_L$).
+          if (qi->grid_coord.y == 0) {
+            z(q[qi->global_id]);
+          }
+        }
+      }
+    }
 
     for (int j = 0; j < MAX_ITER; j++) {
       step1(s, q);
@@ -322,23 +338,25 @@ struct myround {
       step7(s, q, g_results[j]);
       step8(s, q, g_results[j]);
 
+      // As long as MAX_ITER is even, the logical X_L and Z_L operations on the
+      // logical qubit (below) will have no effect on the final result.
+
       // Demonstration of applying logical qubit operations on the surface. The
       // interesting thing about these is that the stabilizer measurements do
-      // not change.
-      if (j == 4) {
-        for (auto qi : s.dataVec) {
-          // Perform Z on row 0. This has the effect of performing a "logical Z"
-          // ($Z_L$). Note that the stabilizer measurements do NOT change.
-          if (qi->grid_coord.y == 0) {
-            z(q[qi->global_id]);
-          }
+      // not change because the state vector changes are orthogonal to the
+      // stabilizer subspace.
+      for (auto qi : s.dataVec) {
+        // Perform Z on row 0. This has the effect of performing a "logical Z"
+        // ($Z_L$). Note that the stabilizer measurements do NOT change.
+        if (qi->grid_coord.y == 0) {
+          z(q[qi->global_id]);
         }
-        for (auto qi : s.dataVec) {
-          // Perform X on column 0. This has the effect of performing a "logical
-          // Z" ($X_L$). Note that the stabilizer measurements do NOT change.
-          if (qi->grid_coord.x == 0) {
-            x(q[qi->global_id]);
-          }
+      }
+      for (auto qi : s.dataVec) {
+        // Perform X on column 0. This has the effect of performing a "logical
+        // X" ($X_L$). Note that the stabilizer measurements do NOT change.
+        if (qi->grid_coord.x == 0) {
+          x(q[qi->global_id]);
         }
       }
     }
@@ -369,16 +387,52 @@ void dump_g_results() {
   }
 }
 
+bool check_repeatable_stabilizers() {
+  bool result = true;
+
+  // Make sure all stabilizer measurements in every iteration are the same as
+  // iteration 0. Start at iteration 1.
+  for (int i = 1; i < MAX_ITER; i++) {
+    for (int j = N * N; j < NUM_PHY_QUBITS; j++) {
+      if (g_results[i][j] != g_results[0][j]) {
+        result = false;
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+void analyze_results(bool performLogicalXFirst) {
+  int parity = 0;
+  int sum = 0;
+  for (int j = 0; j < N * N; j++) {
+    parity ^= g_results[MAX_ITER - 1][j] ? 1 : 0;
+    sum += g_results[MAX_ITER - 1][j] ? 1 : 0;
+  }
+  // The logical qubit measurement is simply the parity of the final result
+  // measurements. (I can't find exactly where that's stated in the literature,
+  // but that seems to hold true.)
+  printf("Logical qubit init = %d; Logical qubit measurement = %d (%s); Sum "
+         "%d; Repeatable Stabilizers? %s\n",
+         performLogicalXFirst, parity,
+         parity == performLogicalXFirst ? "expected" : "UNEXPECTED", sum,
+         check_repeatable_stabilizers() ? "yes" : "no");
+}
+
 int main() {
   LogicalQubit s(N);
 
+  srand(13);
   cudaq::set_random_seed(13);
-  bool performHFirst = false;
-  for (int i = 0; i < 5; i++) {
-    myround{}(N, performHFirst);
-    print_heading(s);
-    dump_g_results();
-    printf("\n");
+
+  for (int i = 0; i < 100; i++) {
+    bool performLogicalXFirst = rand() & 1 ? true : false;
+    myround{}(N, performLogicalXFirst);
+    // print_heading(s);
+    // dump_g_results();
+    // printf("\n");
+    analyze_results(performLogicalXFirst);
   }
 
   return 0;
