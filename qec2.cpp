@@ -84,9 +84,6 @@ public:
       }
     }
 
-    XErrorLUT.resize(1 << ((distance * distance - 1) / 2), -1);
-    ZErrorLUT.resize(1 << ((distance * distance - 1) / 2), -1);
-
     int x_id = 0;
     int z_id = 0;
 
@@ -199,24 +196,31 @@ public:
     delete [] stabilizerQubits;
   }
 
+  // Determine whether an X correction is needed based on the stabilizerFlips
+  // seen in one round
   bool xCorrection(const std::vector<int> &stabilizerFlips) {
     int idx = 0;
     for (auto i : stabilizerFlips)
-      if (this->stabilizerQubits[i].type == StabilizerQubit::X)
-        idx |= (1 << i);
-    auto qb = XErrorLUT[idx];
-    if (qb >= 0)
+      if (stabilizerQubits[i].type == StabilizerQubit::X)
+        idx |= (1 << stabilizerQubits[i].stab_id);
+    if (idx == 0)
+      return false;
+    auto qb = XErrorLUT.find(idx);
+    if (qb != XErrorLUT.end())
       return true;
     return false;
   }
 
+  // Determine whether an Z correction is needed based on the stabilizerFlips
   bool zCorrection(const std::vector<int> &stabilizerFlips) {
     int idx = 0;
     for (auto i : stabilizerFlips)
-      if (this->stabilizerQubits[i].type == StabilizerQubit::Z)
-        idx |= (1 << i);
-    auto qb = ZErrorLUT[idx];
-    if (qb >= 0)
+      if (stabilizerQubits[i].type == StabilizerQubit::Z)
+        idx |= (1 << stabilizerQubits[i].stab_id);
+    if (idx == 0)
+      return false;
+    auto qb = ZErrorLUT.find(idx);
+    if (qb != ZErrorLUT.end())
       return true;
     return false;
   }
@@ -225,8 +229,8 @@ private:
   DataQubit *dataQubits = nullptr;
   StabilizerQubit *stabilizerQubits = nullptr;
   int distance;
-  std::vector<int> XErrorLUT;
-  std::vector<int> ZErrorLUT;
+  std::map<std::size_t, int> XErrorLUT;
+  std::map<std::size_t, int> ZErrorLUT;
 
   // Set bits in XErrorIdx and ZErrorIdx based on the stabilizer type and
   // stabilizer ID
@@ -235,10 +239,10 @@ private:
     if (stabQubit) {
       if (stabQubit->type == StabilizerQubit::X) {
         if (XErrorIdx)
-          *XErrorIdx |= (1ull << stabQubit->stab_id);
+          *XErrorIdx |= (1ul << stabQubit->stab_id);
       } else {
         if (ZErrorIdx)
-          *ZErrorIdx |= (1ull << stabQubit->stab_id);
+          *ZErrorIdx |= (1ul << stabQubit->stab_id);
       }
     }
   }
