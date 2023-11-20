@@ -229,6 +229,10 @@ private:
   DataQubit *dataQubits = nullptr;
   StabilizerQubit *stabilizerQubits = nullptr;
   int distance;
+
+  // The maximum number of entries in these LUTs is currently distance^2 (i.e.
+  // the number of data qubits in the logical qubit) because we only support 1
+  // data qubit error per round.
   std::map<std::size_t, int> XErrorLUT;
   std::map<std::size_t, int> ZErrorLUT;
 
