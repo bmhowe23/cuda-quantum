@@ -31,7 +31,16 @@ struct StabilizerQubit {
   // an integer. Values like -0.5 are acceptable, too.
   dim2 grid_coord{0.5f, 0.5f};
   StabilizerType type = X;
+
+  // Qubit ID. These IDs start at `X` (where `X` is any integer >= 0) for a
+  // logical qubit, and increment for every physical qubit inside that logical
+  // qubit.
   int global_id = -1;
+
+  // Stabilizer-type-specific ID (IDs are duplicated across X and Z
+  // stabilizers). These always start at 0 for a given LogicalQubit.
+  int stab_id = -1;
+
   DataQubit *NE = nullptr;
   DataQubit *NW = nullptr;
   DataQubit *SE = nullptr;
@@ -43,13 +52,17 @@ struct DataQubit {
   DataQubit() = default;
 
   dim2 grid_coord{0.0f, 0.0f};
+
+  // Qubit ID. These IDs start at `X` (where `X` is any integer >= 0) for a
+  // logical qubit, and increment for every physical qubit inside that logical
+  // qubit.
   int global_id = -1;
 
   // These don't seem to be needed
-  // StabilizerQubit *NE = nullptr;
-  // StabilizerQubit *NW = nullptr;
-  // StabilizerQubit *SE = nullptr;
-  // StabilizerQubit *SW = nullptr;
+  StabilizerQubit *NE = nullptr;
+  StabilizerQubit *NW = nullptr;
+  StabilizerQubit *SE = nullptr;
+  StabilizerQubit *SW = nullptr;
 };
 
 class LogicalQubit {
@@ -70,6 +83,12 @@ public:
         dataVec.push_back(&dataQubits[i]);
       }
     }
+
+    XErrorLUT.resize(1 << ((distance * distance - 1) / 2), -1);
+    ZErrorLUT.resize(1 << ((distance * distance - 1) / 2), -1);
+
+    int x_id = 0;
+    int z_id = 0;
 
     // Initialize the stabilizer qubits. This drawing is for a 3x3 grid of data
     // qubits, which has 9-1=8 stabilizer qubits. This is called Surface-17.
@@ -115,6 +134,10 @@ public:
         stabilizerQubits[i].enabled = true;
         stabilizerQubits[i].type =
             static_cast<StabilizerQubit::StabilizerType>(xzToggle);
+        if (xzToggle == StabilizerQubit::X)
+          stabilizerQubits[i].stab_id = x_id++;
+        else
+          stabilizerQubits[i].stab_id = z_id++;
         stabilizerVec.push_back(&stabilizerQubits[i]);
 
         // Set neighbor pointers. This lambda function checks the bounds on the
@@ -125,35 +148,37 @@ public:
           return -1;
         };
         //      
-        // NW -> (r+1,c)----------------------------(r+1,c+1) < -NE
+        // NW -> (r+1,c)----------------------------(r+1,c+1) <- NE
         //           |                                  |
         //           |         Stabilizer Qubit         |
         //           |          (r+.5,c+.5)             |
         //           |                                  |
-        // SW -> (r  ,c)----------------------------(r  ,c+1) < -SE
+        // SW -> (r  ,c)----------------------------(r  ,c+1) <- SE
         int iSW = calcNeighborIx(r, c);
         int iSE = calcNeighborIx(r, c + 1);
         int iNW = calcNeighborIx(r + 1, c);
         int iNE = calcNeighborIx(r + 1, c + 1);
         if (iSW >= 0) {
           stabilizerQubits[i].SW = &dataQubits[iSW];
-          // dataQubits[iSW].NE = &stabilizerQubits[i];
+          dataQubits[iSW].NE = &stabilizerQubits[i];
         }
         if (iSE >= 0) {
           stabilizerQubits[i].SE = &dataQubits[iSE];
-          // dataQubits[iSE].NW = &stabilizerQubits[i];
+          dataQubits[iSE].NW = &stabilizerQubits[i];
         }
         if (iNW >= 0) {
           stabilizerQubits[i].NW = &dataQubits[iNW];
-          // dataQubits[iNW].SE = &stabilizerQubits[i];
+          dataQubits[iNW].SE = &stabilizerQubits[i];
         }
         if (iNE >= 0) {
           stabilizerQubits[i].NE = &dataQubits[iNE];
-          // dataQubits[iNE].SW = &stabilizerQubits[i];
+          dataQubits[iNE].SW = &stabilizerQubits[i];
         }
         i++; // get ready for next iteration
       }
     }
+
+    buildDecodingLUTs();
   }
 
   // Sets data qubit IDs first, starting at startingOffset and incrementing
@@ -174,20 +199,78 @@ public:
     delete [] stabilizerQubits;
   }
 
+  bool xCorrection(const std::vector<int> &stabilizerFlips) {
+    int idx = 0;
+    for (auto i : stabilizerFlips)
+      if (this->stabilizerQubits[i].type == StabilizerQubit::X)
+        idx |= (1 << i);
+    auto qb = XErrorLUT[idx];
+    if (qb >= 0)
+      return true;
+    return false;
+  }
+
+  bool zCorrection(const std::vector<int> &stabilizerFlips) {
+    int idx = 0;
+    for (auto i : stabilizerFlips)
+      if (this->stabilizerQubits[i].type == StabilizerQubit::Z)
+        idx |= (1 << i);
+    auto qb = ZErrorLUT[idx];
+    if (qb >= 0)
+      return true;
+    return false;
+  }
+
 private:
   DataQubit *dataQubits = nullptr;
   StabilizerQubit *stabilizerQubits = nullptr;
   int distance;
+  std::vector<int> XErrorLUT;
+  std::vector<int> ZErrorLUT;
+
+  // Set bits in XErrorIdx and ZErrorIdx based on the stabilizer type and
+  // stabilizer ID
+  void setBitsForErrors(StabilizerQubit *stabQubit, std::size_t *XErrorIdx,
+                        std::size_t *ZErrorIdx) {
+    if (stabQubit) {
+      if (stabQubit->type == StabilizerQubit::X) {
+        if (XErrorIdx)
+          *XErrorIdx |= (1ull << stabQubit->stab_id);
+      } else {
+        if (ZErrorIdx)
+          *ZErrorIdx |= (1ull << stabQubit->stab_id);
+      }
+    }
+  }
+
+  // Build error-decoding lookup tables
+  void buildDecodingLUTs() {
+    // Loop through data qubits and identify error signature if this *one* qubit
+    // were to flip (in either X or Z)
+    for (auto s : dataVec) {
+      std::size_t XErrorIdx = 0;
+      std::size_t ZErrorIdx = 0;
+      setBitsForErrors(s->NE, &XErrorIdx, &ZErrorIdx);
+      setBitsForErrors(s->NW, &XErrorIdx, &ZErrorIdx);
+      setBitsForErrors(s->SE, &XErrorIdx, &ZErrorIdx);
+      setBitsForErrors(s->SW, &XErrorIdx, &ZErrorIdx);
+
+      // Set the LUT[idx] such that it reveals the ID of the qubit that likely
+      // flipped to produce this error signature.
+      XErrorLUT[XErrorIdx] = s->global_id;
+      ZErrorLUT[ZErrorIdx] = s->global_id;
+    }
+  }
 
 public:
   std::vector<DataQubit *> dataVec;
   std::vector<StabilizerQubit *> stabilizerVec;
 };
 
-#define MAX_ITER 10
-int g_results[MAX_ITER][NUM_PHY_QUBITS];
+#define N_ROUNDS 10
+int g_results[N_ROUNDS][NUM_PHY_QUBITS];
 
-struct myround {
+struct performRounds {
   // All of these gates need to happen in parallel
   auto step1(LogicalQubit &s, cudaq::qubit q[]) {
     for (auto m : s.stabilizerVec) {
@@ -304,7 +387,8 @@ struct myround {
     }
   }
 
-  auto operator()(int n, bool performLogicalXFirst) {
+  auto operator()(int n, bool performLogicalXFirst,
+                  int numRoundsToInjectSingleError) {
     cudaq::qubit q[NUM_PHY_QUBITS];
     LogicalQubit s(N);
 
@@ -328,17 +412,26 @@ struct myround {
       }
     }
 
-    for (int j = 0; j < MAX_ITER; j++) {
+    for (int round = 0; round < N_ROUNDS; round++) {
       step1(s, q);
       step2(s, q);
       step3(s, q);
       step4(s, q);
       step5(s, q);
       step6(s, q);
-      step7(s, q, g_results[j]);
-      step8(s, q, g_results[j]);
+      step7(s, q, g_results[round]);
+      step8(s, q, g_results[round]);
 
-      // As long as MAX_ITER is even, the logical X_L and Z_L operations on the
+      // Randomly apply errors in either X or Z
+      if (numRoundsToInjectSingleError > 0) {
+        if (rand() & 1)
+          x(q[rand()%(N*N)]);
+        else
+          z(q[rand()%(N*N)]);
+        numRoundsToInjectSingleError--;
+      }
+
+      // As long as N_ROUNDS is even, the logical X_L and Z_L operations on the
       // logical qubit (below) will have no effect on the final result.
 
       // Demonstration of applying logical qubit operations on the surface. The
@@ -362,7 +455,7 @@ struct myround {
     }
     // Perform a final measurement on the data qubits
     for (int i = 0; i < s.dataVec.size(); i++) {
-      g_results[MAX_ITER - 1][s.dataVec[i]->global_id] =
+      g_results[N_ROUNDS - 1][s.dataVec[i]->global_id] =
           mz(q[s.dataVec[i]->global_id]);
     }
   }
@@ -378,46 +471,73 @@ void print_heading(LogicalQubit &s) {
 }
 
 void dump_g_results() {
-  for (int i = 0; i < MAX_ITER; i++) {
+  for (int round = 0; round < N_ROUNDS; round++) {
     printf("  ");
     for (int j = 0; j < NUM_PHY_QUBITS; j++) {
-      printf("|%d|", g_results[i][j]);
+      printf("|%d|", g_results[round][j]);
     }
     printf("\n");
   }
 }
 
-bool check_repeatable_stabilizers() {
-  bool result = true;
-
+bool check_repeatable_stabilizers(int numRoundsToInjectSingleError) {
   // Make sure all stabilizer measurements in every iteration are the same as
-  // iteration 0. Start at iteration 1.
-  for (int i = 1; i < MAX_ITER; i++) {
-    for (int j = N * N; j < NUM_PHY_QUBITS; j++) {
-      if (g_results[i][j] != g_results[0][j]) {
-        result = false;
-        break;
-      }
-    }
+  // the prior round. Or more specifically, make sure the number of rounds where
+  // they don't match the prior round is the same as the number of rounds that
+  // errors were injected.
+  int numMismatchedRounds = 0;
+  for (int round = 1; round < N_ROUNDS; round++) {
+    int numMismatchesThisRound = 0;
+    for (int j = N * N; j < NUM_PHY_QUBITS; j++)
+      if (g_results[round][j] != g_results[round - 1][j])
+        numMismatchesThisRound++;
+    if (numMismatchesThisRound > 0)
+      numMismatchedRounds++;
   }
-  return result;
+  return numMismatchedRounds == numRoundsToInjectSingleError;
 }
 
-void analyze_results(bool performLogicalXFirst) {
+void analyze_results(LogicalQubit &s, bool performLogicalXFirst,
+                     int numRoundsToInjectSingleError) {
   int parity = 0;
   int sum = 0;
   for (int j = 0; j < N * N; j++) {
-    parity ^= g_results[MAX_ITER - 1][j] ? 1 : 0;
-    sum += g_results[MAX_ITER - 1][j] ? 1 : 0;
+    parity ^= g_results[N_ROUNDS - 1][j] ? 1 : 0;
+    sum += g_results[N_ROUNDS - 1][j] ? 1 : 0;
   }
+
+  // Perform error correction by analyzing the syndromes
+  int x_flip = 0;
+  int z_flip = 0;
+  for (int round = 1; round < N_ROUNDS; round++) {
+    std::vector<int> stabToggled;
+    for (auto m : s.stabilizerVec) {
+      const int id = m->global_id;
+      if (g_results[round][id] != g_results[round - 1][id]) {
+        // FIXME if using more than one logical qubit
+        stabToggled.push_back(id - s.dataVec.size());
+      } 
+    }
+    if (s.xCorrection(stabToggled))
+      x_flip ^= 1;
+    if (s.zCorrection(stabToggled))
+      z_flip ^= 1;
+  }
+
+  if (z_flip)
+    parity ^= 1;
+
   // The logical qubit measurement is simply the parity of the final result
   // measurements. (I can't find exactly where that's stated in the literature,
   // but that seems to hold true.)
-  printf("Logical qubit init = %d; Logical qubit measurement = %d (%s); Sum "
-         "%d; Repeatable Stabilizers? %s\n",
+  printf("Logical qubit init = %d; Error-corrected logical qubit measurement = "
+         "%d (%s); x_flip = %d, z_flip = %d, Sum %d; Number of errors injected "
+         "= %d; Stabilizers as expected? %s\n",
          performLogicalXFirst, parity,
-         parity == performLogicalXFirst ? "expected" : "UNEXPECTED", sum,
-         check_repeatable_stabilizers() ? "yes" : "no");
+         parity == performLogicalXFirst ? "expected" : "UNEXPECTED", x_flip,
+         z_flip, sum, numRoundsToInjectSingleError,
+         check_repeatable_stabilizers(numRoundsToInjectSingleError) ? "yes"
+                                                                    : "no");
 }
 
 int main() {
@@ -426,13 +546,14 @@ int main() {
   srand(13);
   cudaq::set_random_seed(13);
 
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 30; i++) {
     bool performLogicalXFirst = rand() & 1 ? true : false;
-    myround{}(N, performLogicalXFirst);
+    int numRoundsToInjectSingleError = rand() % (N_ROUNDS-1);
+    performRounds{}(N, performLogicalXFirst, numRoundsToInjectSingleError);
     // print_heading(s);
     // dump_g_results();
     // printf("\n");
-    analyze_results(performLogicalXFirst);
+    analyze_results(s, performLogicalXFirst, numRoundsToInjectSingleError);
   }
 
   return 0;
