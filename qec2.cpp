@@ -197,7 +197,9 @@ public:
   }
 
   // Determine whether an X correction is needed based on the stabilizerFlips
-  // seen in one round
+  // seen in one round. Note: a distance=3 surface code can only correct one
+  // error per round, so this is fairly simple right now. It would need updates
+  // if you want to detect/correct >1 error per round.
   bool xCorrection(const std::vector<int> &stabilizerFlips) {
     int idx = 0;
     for (auto i : stabilizerFlips)
@@ -211,7 +213,10 @@ public:
     return false;
   }
 
-  // Determine whether an Z correction is needed based on the stabilizerFlips
+  // Determine whether a X correction is needed based on the stabilizerFlips
+  // seen in one round. Note: a distance=3 surface code can only correct one
+  // error per round, so this is fairly simple right now. It would need updates
+  // if you want to detect/correct >1 error per round.
   bool zCorrection(const std::vector<int> &stabilizerFlips) {
     int idx = 0;
     for (auto i : stabilizerFlips)
