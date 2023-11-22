@@ -7,6 +7,8 @@
  ******************************************************************************/
 
 #include <cudaq.h>
+#include <iostream>
+#include <fstream>
 
 #define N 3
 #define NUM_PHY_QUBITS (2*N*N - 1)
@@ -437,10 +439,15 @@ struct performRounds {
 
       // Randomly apply errors in either X or Z
       if (numRoundsToInjectSingleError > 0) {
-        if (rand() & 1)
-          x(q[rand()%(N*N)]);
-        else
-          z(q[rand()%(N*N)]);
+        if (rand() & 1) {
+          auto qb = rand()%(N*N);
+          //printf("Performing x(q[%d])\n", qb);
+          x(q[qb]);
+        } else {
+          auto qb = rand()%(N*N);
+          //printf("Performing z(q[%d])\n", qb);
+          z(q[qb]);
+        }
         numRoundsToInjectSingleError--;
       }
 
@@ -493,18 +500,28 @@ void dump_g_results() {
   }
 }
 
-void dump_as_pymatching_code() {
-  // Also print out the data in PyMatching format
+void dump_as_pymatching_code(int performLogicalXFirst,
+                             int numRoundsToInjectSingleError,
+                             bool runPyMatching) {
   LogicalQubit s(N);
-  
+
+  // This is probably the ugliest code I've ever written!
+  FILE *fp = fopen("pymatch_tmp_python_file.py", "w");
+  if (!fp) {
+    printf("fopen failed, exiting\n");
+    exit(1);
+  }
+  fprintf(fp, "import numpy as np\n");
+  fprintf(fp, "from pymatching import Matching\n");
+
   // Print the parity check matrix for X and Z to build the graphs
   auto printMatchingGraph = [&](StabilizerQubit::StabilizerType xz,
                                 const char *pyVar) {
-    printf("%s = np.array([\n", pyVar);
+    fprintf(fp, "%s = np.array([\n", pyVar);
     int count = 0;
     for (auto m : s.stabilizerVec) {
       if (m->type == xz) {
-        printf("[");
+        fprintf(fp, "[");
         std::vector<int> row(N * N, 0);
         if (m->NE) row[m->NE->global_id] = 1;
         if (m->NW) row[m->NW->global_id] = 1;
@@ -513,52 +530,97 @@ void dump_as_pymatching_code() {
         int dq = 0;
         for (auto link : row) {
           if (dq < row.size() - 1)
-            printf("%d,", link);
+            fprintf(fp, "%d,", link);
           else
-            printf("%d", link);
+            fprintf(fp, "%d", link);
           dq++;
         }
         if (count < (N * N - 1) / 2 - 1)
-          printf("],\n");
+          fprintf(fp, "],\n");
         else
-          printf("]])\n");
+          fprintf(fp, "]])\n");
         count++;
       }
     }
   };
   printMatchingGraph(StabilizerQubit::X, "HX");
   printMatchingGraph(StabilizerQubit::Z, "HZ");
-  printf("mx = Matching(HX, repetitions=%d)\n", N_ROUNDS - 1);
-  printf("mz = Matching(HZ, repetitions=%d)\n", N_ROUNDS - 1);
+  float timelike_weights = 999;
+  fprintf(fp, "mx = Matching(HX, repetitions=%d, timelike_weights=%.0f)\n",
+          N_ROUNDS - 1, timelike_weights);
+  fprintf(fp, "mz = Matching(HZ, repetitions=%d, timelike_weights=%.0f)\n",
+          N_ROUNDS - 1, timelike_weights);
 
   // Now print the syndrome (differences between each round)
   auto printPyMatchingSyndromes =
       [&](StabilizerQubit::StabilizerType xz, const char *pyVar) {
-        printf("%s = np.array([\n", pyVar);
+        fprintf(fp, "%s = np.array([\n", pyVar);
         for (int round = 1; round < N_ROUNDS; round++) {
-          printf("[");
+          fprintf(fp, "[");
           int count = 0;
           for (auto m : s.stabilizerVec) {
             if (m->type == xz) {
               if (count < (N * N - 1) / 2 - 1)
-                printf("%d,", g_results[round - 1][m->global_id] ^
-                                  g_results[round][m->global_id]);
+                fprintf(fp, "%d,",
+                        g_results[round - 1][m->global_id] ^
+                            g_results[round][m->global_id]);
               else
-                printf("%d", g_results[round - 1][m->global_id] ^
-                                 g_results[round][m->global_id]);
+                fprintf(fp, "%d",
+                        g_results[round - 1][m->global_id] ^
+                            g_results[round][m->global_id]);
               count++;
             }
           }
           if (round < N_ROUNDS - 1)
-            printf("],\n");
+            fprintf(fp, "],\n");
           else
-            printf("]]).transpose()\n");
+            fprintf(fp, "]]).transpose()\n");
         }
       };
   printPyMatchingSyndromes(StabilizerQubit::X, "syndrome_x");
   printPyMatchingSyndromes(StabilizerQubit::Z, "syndrome_z");
-  printf("print(mx.decode(syndrome_x))\n");
-  printf("print(mz.decode(syndrome_z))\n");
+
+  fprintf(fp, "decode_x = mx.decode(syndrome_x)\n");
+  fprintf(fp, "decode_z = mz.decode(syndrome_z)\n");
+  fprintf(fp, "#print(decode_x)\n");
+  fprintf(fp, "#print(decode_z)\n");
+  fprintf(fp, "resX = np.bitwise_xor.reduce(decode_x)\n");
+  fprintf(fp, "resZ = np.bitwise_xor.reduce(decode_z)\n");
+  fprintf(fp, "print(resX, resZ)\n");
+  fclose(fp);
+
+  // Read the results and apply correction (if runPyMatching is enabled)
+  int parity = 0;
+  int sum = 0;
+  for (int j = 0; j < N * N; j++) {
+    parity ^= g_results[N_ROUNDS - 1][j] ? 1 : 0;
+    sum += g_results[N_ROUNDS - 1][j] ? 1 : 0;
+  }
+
+  int original_parity = parity;
+
+  if (runPyMatching) {
+    int decoded_x = 0;
+    int decoded_z = 0;
+    int status = std::system("/usr/bin/python3 pymatch_tmp_python_file.py "
+                             ">pymatch_tmp_python_file_out.txt");
+    std::ifstream infile("pymatch_tmp_python_file_out.txt");
+    infile >> decoded_x >> decoded_z;
+    // printf("decoded_x = %d, decoded_z = %d\n", decoded_x, decoded_z);
+    infile.close();
+
+    if (decoded_z)
+      parity ^= 1;
+  } else {
+    parity = 999;
+  }
+
+  printf("Logical qubit init = %d; raw measurement = %d; error-corrected "
+         "logical qubit measurement = %d, num errs = %d (result is %s)\n",
+         performLogicalXFirst, original_parity, parity,
+         numRoundsToInjectSingleError,
+         performLogicalXFirst == parity ? "GOOD"
+                                        : (runPyMatching ? "BAD" : "UNKNOWN"));
 }
 
 bool check_repeatable_stabilizers(int numRoundsToInjectSingleError) {
@@ -629,17 +691,23 @@ int main(int argc, char *argv[]) {
 
   int n_iter = argc > 1 ? atoi(argv[1]) : 30;
 
+  bool runPyMatching = true;
+  if (auto *ch = getenv("DISABLE_PYMATCHING"))
+    if (ch[0] == '1' || ch[0] == 'y' || ch[0] == 'Y')
+      runPyMatching = false;
+
   for (int i = 0; i < n_iter; i++) {
     bool performLogicalXFirst = rand() & 1 ? true : false;
-    int numRoundsToInjectSingleError = 7;//rand() % (N_ROUNDS-2);
+    int numRoundsToInjectSingleError = rand() % (N_ROUNDS-2);
     performRounds{}(N, performLogicalXFirst, numRoundsToInjectSingleError);
     if (n_iter < 5) {
       print_heading(s);
       dump_g_results();
-      dump_as_pymatching_code();
       printf("\n");
     }
-    analyze_results(s, performLogicalXFirst, numRoundsToInjectSingleError);
+    dump_as_pymatching_code(performLogicalXFirst, numRoundsToInjectSingleError,
+                            runPyMatching);
+    //analyze_results(s, performLogicalXFirst, numRoundsToInjectSingleError);
   }
 
   return 0;
