@@ -493,6 +493,74 @@ void dump_g_results() {
   }
 }
 
+void dump_as_pymatching_code() {
+  // Also print out the data in PyMatching format
+  LogicalQubit s(N);
+  
+  // Print the parity check matrix for X and Z to build the graphs
+  auto printMatchingGraph = [&](StabilizerQubit::StabilizerType xz,
+                                const char *pyVar) {
+    printf("%s = np.array([\n", pyVar);
+    int count = 0;
+    for (auto m : s.stabilizerVec) {
+      if (m->type == xz) {
+        printf("[");
+        std::vector<int> row(N * N, 0);
+        if (m->NE) row[m->NE->global_id] = 1;
+        if (m->NW) row[m->NW->global_id] = 1;
+        if (m->SW) row[m->SW->global_id] = 1;
+        if (m->SE) row[m->SE->global_id] = 1;
+        int dq = 0;
+        for (auto link : row) {
+          if (dq < row.size() - 1)
+            printf("%d,", link);
+          else
+            printf("%d", link);
+          dq++;
+        }
+        if (count < (N * N - 1) / 2 - 1)
+          printf("],\n");
+        else
+          printf("]])\n");
+        count++;
+      }
+    }
+  };
+  printMatchingGraph(StabilizerQubit::X, "HX");
+  printMatchingGraph(StabilizerQubit::Z, "HZ");
+  printf("mx = Matching(HX, repetitions=%d)\n", N_ROUNDS - 1);
+  printf("mz = Matching(HZ, repetitions=%d)\n", N_ROUNDS - 1);
+
+  // Now print the syndrome (differences between each round)
+  auto printPyMatchingSyndromes =
+      [&](StabilizerQubit::StabilizerType xz, const char *pyVar) {
+        printf("%s = np.array([\n", pyVar);
+        for (int round = 1; round < N_ROUNDS; round++) {
+          printf("[");
+          int count = 0;
+          for (auto m : s.stabilizerVec) {
+            if (m->type == xz) {
+              if (count < (N * N - 1) / 2 - 1)
+                printf("%d,", g_results[round - 1][m->global_id] ^
+                                  g_results[round][m->global_id]);
+              else
+                printf("%d", g_results[round - 1][m->global_id] ^
+                                 g_results[round][m->global_id]);
+              count++;
+            }
+          }
+          if (round < N_ROUNDS - 1)
+            printf("],\n");
+          else
+            printf("]]).transpose()\n");
+        }
+      };
+  printPyMatchingSyndromes(StabilizerQubit::X, "syndrome_x");
+  printPyMatchingSyndromes(StabilizerQubit::Z, "syndrome_z");
+  printf("print(mx.decode(syndrome_x))\n");
+  printf("print(mz.decode(syndrome_z))\n");
+}
+
 bool check_repeatable_stabilizers(int numRoundsToInjectSingleError) {
   // Make sure all stabilizer measurements in every iteration are the same as
   // the prior round. Or more specifically, make sure the number of rounds where
@@ -553,19 +621,24 @@ void analyze_results(LogicalQubit &s, bool performLogicalXFirst,
                                                                     : "no");
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   LogicalQubit s(N);
 
   srand(13);
   cudaq::set_random_seed(13);
 
-  for (int i = 0; i < 30; i++) {
+  int n_iter = argc > 1 ? atoi(argv[1]) : 30;
+
+  for (int i = 0; i < n_iter; i++) {
     bool performLogicalXFirst = rand() & 1 ? true : false;
-    int numRoundsToInjectSingleError = rand() % (N_ROUNDS-1);
+    int numRoundsToInjectSingleError = 7;//rand() % (N_ROUNDS-2);
     performRounds{}(N, performLogicalXFirst, numRoundsToInjectSingleError);
-    // print_heading(s);
-    // dump_g_results();
-    // printf("\n");
+    if (n_iter < 5) {
+      print_heading(s);
+      dump_g_results();
+      dump_as_pymatching_code();
+      printf("\n");
+    }
     analyze_results(s, performLogicalXFirst, numRoundsToInjectSingleError);
   }
 
