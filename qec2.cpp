@@ -314,14 +314,18 @@ struct performRounds {
   auto step3(LogicalQubit &s, cudaq::qubit q[]) {
     for (auto m : s.stabilizerVec) {
       if (m->enabled) {
-        auto neighbor = m->NE ? m->NE->global_id : -1;
-        if (neighbor >= 0) {
-          if (m->type == StabilizerQubit::X)
-            x<cudaq::ctrl>(q[m->global_id], q[neighbor]);
+        auto neighborX = m->SE ? m->SE->global_id : -1;
+        auto neighborZ = m->SE ? m->SE->global_id : -1;
+        if (m->type == StabilizerQubit::X) {
+          if (neighborX >= 0)
+            x<cudaq::ctrl>(q[m->global_id], q[neighborX]);
           else
-            x<cudaq::ctrl>(q[neighbor], q[m->global_id]);
+            ry(0., q[m->global_id]);
         } else {
-          ry(0., q[m->global_id]);
+          if (neighborZ >= 0)
+            x<cudaq::ctrl>(q[neighborZ], q[m->global_id]);
+          else
+            ry(0., q[m->global_id]);
         }
       }
     }
@@ -331,14 +335,18 @@ struct performRounds {
   auto step4(LogicalQubit &s, cudaq::qubit q[]) {
     for (auto m : s.stabilizerVec) {
       if (m->enabled) {
-        auto neighbor = m->NW ? m->NW->global_id : -1;
-        if (neighbor >= 0) {
-          if (m->type == StabilizerQubit::X)
-            x<cudaq::ctrl>(q[m->global_id], q[neighbor]);
+        auto neighborX = m->SW ? m->SW->global_id : -1;
+        auto neighborZ = m->NE ? m->NE->global_id : -1;
+        if (m->type == StabilizerQubit::X) {
+          if (neighborX >= 0)
+            x<cudaq::ctrl>(q[m->global_id], q[neighborX]);
           else
-            x<cudaq::ctrl>(q[neighbor], q[m->global_id]);
+            ry(0., q[m->global_id]);
         } else {
-          ry(0., q[m->global_id]);
+          if (neighborZ >= 0)
+            x<cudaq::ctrl>(q[neighborZ], q[m->global_id]);
+          else
+            ry(0., q[m->global_id]);
         }
       }
     }
@@ -348,14 +356,18 @@ struct performRounds {
   auto step5(LogicalQubit &s, cudaq::qubit q[]) {
     for (auto m : s.stabilizerVec) {
       if (m->enabled) {
-        auto neighbor = m->SE ? m->SE->global_id : -1;
-        if (neighbor >= 0) {
-          if (m->type == StabilizerQubit::X)
-            x<cudaq::ctrl>(q[m->global_id], q[neighbor]);
+        auto neighborX = m->NE ? m->NE->global_id : -1;
+        auto neighborZ = m->SW ? m->SW->global_id : -1;
+        if (m->type == StabilizerQubit::X) {
+          if (neighborX >= 0)
+            x<cudaq::ctrl>(q[m->global_id], q[neighborX]);
           else
-            x<cudaq::ctrl>(q[neighbor], q[m->global_id]);
+            ry(0., q[m->global_id]);
         } else {
-          ry(0., q[m->global_id]);
+          if (neighborZ >= 0)
+            x<cudaq::ctrl>(q[neighborZ], q[m->global_id]);
+          else
+            ry(0., q[m->global_id]);
         }
       }
     }
@@ -365,14 +377,18 @@ struct performRounds {
   auto step6(LogicalQubit &s, cudaq::qubit q[]) {
     for (auto m : s.stabilizerVec) {
       if (m->enabled) {
-        auto neighbor = m->SW ? m->SW->global_id : -1;
-        if (neighbor >= 0) {
-          if (m->type == StabilizerQubit::X)
-            x<cudaq::ctrl>(q[m->global_id], q[neighbor]);
+        auto neighborX = m->NW ? m->NW->global_id : -1;
+        auto neighborZ = m->NW ? m->NW->global_id : -1;
+        if (m->type == StabilizerQubit::X) {
+          if (neighborX >= 0)
+            x<cudaq::ctrl>(q[m->global_id], q[neighborX]);
           else
-            x<cudaq::ctrl>(q[neighbor], q[m->global_id]);
+            ry(0., q[m->global_id]);
         } else {
-          ry(0., q[m->global_id]);
+          if (neighborZ >= 0)
+            x<cudaq::ctrl>(q[neighborZ], q[m->global_id]);
+          else
+            ry(0., q[m->global_id]);
         }
       }
     }
