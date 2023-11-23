@@ -448,24 +448,24 @@ struct performRounds {
       step2(s, q);
       step3(s, q);
       step4(s, q);
-      // Randomly apply errors in either X or Z
-      if (round > 0 && numRoundsToInjectSingleError > 0) {
-        if (rand() & 1) {
-          auto qb = rand()%(N*N);
-          printf("Performing x(q[%d])\n", qb);
-          x(q[qb]);
-        } else {
-          auto qb = rand()%(N*N);
-          printf("Performing z(q[%d])\n", qb);
-          z(q[qb]);
-        }
-        numRoundsToInjectSingleError--;
-      }
       step5(s, q);
       step6(s, q);
       step7(s, q, g_results[round]);
       step8(s, q, g_results[round]);
 
+      // Randomly apply errors in either X or Z
+      if (numRoundsToInjectSingleError > 0) {
+        if (rand() & 1) {
+          auto qb = rand()%(N*N);
+          //printf("Performing x(q[%d])\n", qb);
+          x(q[qb]);
+        } else {
+          auto qb = rand()%(N*N);
+          //printf("Performing z(q[%d])\n", qb);
+          z(q[qb]);
+        }
+        numRoundsToInjectSingleError--;
+      }
 
       // As long as N_ROUNDS is even, the logical X_L and Z_L operations on the
       // logical qubit (below) will have no effect on the final result.
@@ -714,9 +714,9 @@ int main(int argc, char *argv[]) {
 
   for (int i = 0; i < n_iter; i++) {
     bool performLogicalXFirst = rand() & 1 ? true : false;
-    int numRoundsToInjectSingleError = 1;//rand() % (N_ROUNDS-2);
+    int numRoundsToInjectSingleError = rand() % (N_ROUNDS-2);
     performRounds{}(N, performLogicalXFirst, numRoundsToInjectSingleError);
-    if (n_iter < 7) {
+    if (n_iter < 5) {
       print_heading(s);
       dump_g_results();
       printf("\n");
