@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                  *
+ * Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                  *
  * All rights reserved.                                                        *
  *                                                                             *
  * This source code and the accompanying materials are made available under    *
@@ -24,6 +24,21 @@
 #include <signal.h>
 #include <string>
 #include <vector>
+
+// #include "llvm/IR/LegacyPassManager.h"
+// #include "llvm/Support/TargetSelect.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
+// #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+// #include "llvm/ExecutionEngine/ExecutionEngine.h"
+// #include "llvm/ExecutionEngine/MCJIT.h"
+// #include "llvm/Support/TargetSelect.h"
+// #include "llvm/Support/Error.h"
+// #include "llvm/Support/InitLLVM.h"
+
+//#include "llvm/Bitcode/"
 namespace nvqir {
 void tearDownBeforeMPIFinalize();
 void setRandomSeed(std::size_t);
@@ -391,6 +406,19 @@ int num_available_gpus() {
   cudaGetDeviceCount(&nDevices);
 #endif
   return nDevices;
+}
+
+void parse_jit_and_run_bitcode(const std::string &bitcode) {
+  auto llvmContext = std::make_unique<llvm::LLVMContext>();
+  // llvmContext->setOpaquePointers(false);
+  llvm::SMDiagnostic Err;
+  auto mod =
+      llvm::parseIR(llvm::MemoryBufferRef(bitcode, "<bitcode>"), Err, *llvmContext);
+  if (!mod) {
+    // handle error
+    printf("Invalid IR received parse_jit_and_run_bitcode\n");
+    return;
+  }
 }
 
 namespace __internal__ {

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                  *
+ * Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                  *
  * All rights reserved.                                                        *
  *                                                                             *
  * This source code and the accompanying materials are made available under    *
@@ -54,6 +54,9 @@ PYBIND11_MODULE(_pycudaq, mod) {
 
   mod.def("num_available_gpus", &cudaq::num_available_gpus,
           "The number of available GPUs detected on the system.");
+
+  mod.def("parse_jit_and_run_bitcode", &cudaq::parse_jit_and_run_bitcode,
+          "Parse, JIT, and run bitcode");
 
   auto mpiSubmodule = mod.def_submodule("mpi");
   mpiSubmodule.def(

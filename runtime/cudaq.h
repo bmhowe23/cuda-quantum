@@ -1,5 +1,5 @@
 /****************************************************************-*- C++ -*-****
- * Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                  *
+ * Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                  *
  * All rights reserved.                                                        *
  *                                                                             *
  * This source code and the accompanying materials are made available under    *
@@ -217,6 +217,9 @@ std::size_t get_random_seed();
 
 /// @brief The number of available GPUs.
 int num_available_gpus();
+
+/// @brief Parse, JIT, and run bitcode.
+void parse_jit_and_run_bitcode(const std::string &bitcode);
 
 namespace mpi {
 /// @brief Return true if CUDA Quantum has MPI plugin support.

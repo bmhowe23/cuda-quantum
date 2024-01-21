@@ -1,5 +1,5 @@
 # ============================================================================ #
-# Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -23,9 +23,15 @@ add_library(${LIBRARY_NAME}
 
 set_property(GLOBAL APPEND PROPERTY CUDAQ_RUNTIME_LIBS ${LIBRARY_NAME})
 
+add_definitions(${LLVM_DEFINITIONS})
+llvm_map_components_to_libnames(llvm_libs irreader mcjit)
+
 if (CUDA_FOUND)
   enable_language(CUDA)
   find_package(CUDAToolkit REQUIRED)
+  find_package(LLVM REQUIRED CONFIG)
+  message(STATUS "LLVM include directory: ${LLVM_INCLUDE_DIRS}")
+  message(STATUS "LLVM library directory: ${LLVM_LIBRARY_DIRS}")
 
   target_include_directories(${LIBRARY_NAME}
     PUBLIC $<INSTALL_INTERFACE:include>
@@ -36,7 +42,7 @@ if (CUDA_FOUND)
 
   target_link_libraries(${LIBRARY_NAME}
     PUBLIC dl cudaq-spin cudaq-common cudaq-nlopt cudaq-ensmallen
-    PRIVATE nvqir fmt::fmt-header-only CUDA::cudart_static)
+    PRIVATE nvqir fmt::fmt-header-only CUDA::cudart_static ${llvm_libs})
 
   target_compile_definitions(${LIBRARY_NAME} PRIVATE CUDAQ_HAS_CUDA)
 else()
@@ -48,7 +54,7 @@ else()
 
   target_link_libraries(${LIBRARY_NAME}
     PUBLIC dl cudaq-spin cudaq-common cudaq-nlopt cudaq-ensmallen
-    PRIVATE nvqir fmt::fmt-header-only)
+    PRIVATE nvqir fmt::fmt-header-only ${llvm_libs})
 endif()
 
 add_subdirectory(qis/managers)
