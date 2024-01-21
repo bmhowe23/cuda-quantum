@@ -13,7 +13,7 @@ import os
 import ctypes
 import time
 # from multiprocessing import Process, Queue
-# from mpi4py import MPI
+from mpi4py import MPI
 
 # Initialize LLVM
 # llvm.initialize()
@@ -44,24 +44,22 @@ import time
 #     #results_queue.put(os.getpid())
 #     #results_queue.put(result)
 
+# Run like this (assuming from "build" directory):
+#   PYTHONPATH=python:$PYTHONPATH UCX_WARN_UNUSED_ENV_VARS=n mpirun -np 2 --allow-run-as-root python3 ../benpytest2.py 
 if __name__ == '__main__':
 
-    with open("/workspaces/cuda-quantum/bencpptest.bc", "rb") as f:
-      data = f.read()
-      cudaq.parse_jit_and_run_bitcode(data)
-    # comm = MPI.COMM_WORLD
-    # rank = comm.Get_rank()
-    # print("rank = ", rank)
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    print("rank = ", rank)
 
-    # if rank == 0:
-    #     # Compile with:
-    #     #    clang++ -fno-pic -fno-pie -Xclang -no-opaque-pointers bencpptest.cpp -emit-llvm -c -O2 -o bencpptest.bc
-    #     bitcode = MemoryBuffer(filename="/workspaces/cuda-quantum/bencpptest.bc".encode("utf-8"))
+    if rank == 0:
+        # Compile with:
+        #   clang++ bencpptest.cpp -emit-llvm -c -O0 -o bencpptest.bc
+        with open("/workspaces/cuda-quantum/bencpptest.bc", "rb") as f:
+            bitcode = f.read()
+        for i in range(1, comm.Get_size()):
+            comm.send(bitcode, dest=i, tag=11)
+    else:
+        bitcode = comm.recv(source=0, tag=11)
 
-    #     for i in range(1, comm.Get_size()):
-    #         comm.send(bitcode, dest=i, tag=11)
-    # else:
-    #     bitcode = comm.recv(source=0, tag=11)
-
-    # results_queue = list()
-    # process_task(bitcode, results_queue)
+    cudaq.parse_jit_and_run_bitcode(bitcode)
