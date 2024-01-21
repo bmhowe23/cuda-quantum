@@ -42,7 +42,7 @@ if (CUDA_FOUND)
 
   target_link_libraries(${LIBRARY_NAME}
     PUBLIC dl cudaq-spin cudaq-common cudaq-nlopt cudaq-ensmallen
-    PRIVATE nvqir fmt::fmt-header-only CUDA::cudart_static ${llvm_libs})
+    PRIVATE nvqir fmt::fmt-header-only CUDA::cudart_static cudaq-mlir-runtime)
 
   target_compile_definitions(${LIBRARY_NAME} PRIVATE CUDAQ_HAS_CUDA)
 else()
@@ -54,7 +54,7 @@ else()
 
   target_link_libraries(${LIBRARY_NAME}
     PUBLIC dl cudaq-spin cudaq-common cudaq-nlopt cudaq-ensmallen
-    PRIVATE nvqir fmt::fmt-header-only ${llvm_libs})
+    PRIVATE nvqir fmt::fmt-header-only cudaq-mlir-runtime)
 endif()
 
 add_subdirectory(qis/managers)
@@ -69,6 +69,7 @@ install(EXPORT cudaq-targets
         FILE CUDAQTargets.cmake
         NAMESPACE cudaq::
         DESTINATION lib/cmake/cudaq)
+
 
 # Install CUDAQ MPI interface header, reference implementation, and build script
 # for manual activation on a local system if needed.

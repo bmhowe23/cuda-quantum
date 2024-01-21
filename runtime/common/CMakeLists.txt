@@ -1,5 +1,5 @@
 # ============================================================================ #
-# Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -132,4 +132,9 @@ target_link_libraries(cudaq-mlir-runtime
     MLIRLLVMCommonConversion
     MLIRLLVMToLLVMIRTranslation)
 
-install(TARGETS cudaq-mlir-runtime DESTINATION lib)
+install(TARGETS cudaq-mlir-runtime OptimBuilder CCDialect QuakeDialect OptCodeGen OptTransforms EXPORT cudaq-mlir-runtime DESTINATION lib)
+
+install(EXPORT cudaq-mlir-runtime
+        FILE CUDAQMLIRRuntime.cmake
+        NAMESPACE cudaq::
+        DESTINATION lib/cmake/cudaq)
