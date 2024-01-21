@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                  *
+ * Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                  *
  * All rights reserved.                                                        *
  *                                                                             *
  * This source code and the accompanying materials are made available under    *
@@ -563,7 +563,7 @@ std::unique_ptr<MLIRContext> initializeMLIR() {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, LLVM::LLVMDialect, math::MathDialect,
                   memref::MemRefDialect, quake::QuakeDialect, cc::CCDialect,
-                  func::FuncDialect>();
+                  func::FuncDialect, mlir::DLTIDialect>();
   auto context = std::make_unique<MLIRContext>(registry);
   context->loadAllAvailableDialects();
   registerLLVMDialectTranslation(*context);

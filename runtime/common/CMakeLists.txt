@@ -119,6 +119,7 @@ target_link_libraries(cudaq-mlir-runtime
     QuakeDialect
     OptCodeGen
     OptTransforms
+    MLIRTargetLLVMIRImport
     MLIRTranslateLib
     MLIRIR
     MLIRParser

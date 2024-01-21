@@ -25,20 +25,14 @@
 #include <string>
 #include <vector>
 
-// #include "llvm/IR/LegacyPassManager.h"
-// #include "llvm/Support/TargetSelect.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
+#include "common/RuntimeMLIR.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/ExecutionEngine/ExecutionEngine.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Target/LLVMIR/Import.h"
 #include "llvm/IRReader/IRReader.h"
-// #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
-// #include "llvm/ExecutionEngine/ExecutionEngine.h"
-// #include "llvm/ExecutionEngine/MCJIT.h"
-// #include "llvm/Support/TargetSelect.h"
-// #include "llvm/Support/Error.h"
-// #include "llvm/Support/InitLLVM.h"
 
-//#include "llvm/Bitcode/"
 namespace nvqir {
 void tearDownBeforeMPIFinalize();
 void setRandomSeed(std::size_t);
@@ -409,8 +403,8 @@ int num_available_gpus() {
 }
 
 void parse_jit_and_run_bitcode(const std::string &bitcode) {
+  auto mlirContext = initializeMLIR();
   auto llvmContext = std::make_unique<llvm::LLVMContext>();
-  // llvmContext->setOpaquePointers(false);
   llvm::SMDiagnostic Err;
   auto mod =
       llvm::parseIR(llvm::MemoryBufferRef(bitcode, "<bitcode>"), Err, *llvmContext);
@@ -419,6 +413,32 @@ void parse_jit_and_run_bitcode(const std::string &bitcode) {
     printf("Invalid IR received parse_jit_and_run_bitcode\n");
     return;
   }
+
+  mlir::ExecutionEngineOptions opts;
+  opts.transformer = [](llvm::Module *m) { return llvm::ErrorSuccess(); };
+  opts.jitCodeGenOptLevel = llvm::CodeGenOpt::None;
+
+  mlir::OwningOpRef<mlir::ModuleOp> mlirModule =
+      mlir::translateLLVMIRToModule(std::move(mod), mlirContext.get());
+  if (!mlirModule) {
+    // Handle error
+    printf("translateLLVMIRToModule failed\n");
+    return;
+  }
+
+  auto engine = mlir::ExecutionEngine::create(*mlirModule, opts);
+  if (!engine) {
+    printf("Engine creation failed\n");
+    return;
+  }
+  auto funcPtr = engine->get()->lookup("myfunc");
+  if (!funcPtr) {
+    printf("lookup failed\n");
+    return;
+  }
+  auto func = reinterpret_cast<int (*)()>(*funcPtr);
+  auto result = func();
+  printf("CUDAQ result = %d\n", result);
 }
 
 namespace __internal__ {
