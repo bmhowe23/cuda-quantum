@@ -53,6 +53,7 @@ if __name__ == '__main__':
     print("rank = ", rank)
 
     if rank == 0:
+        ctypes.CDLL("/workspaces/cuda-quantum/benlib1.so", mode=ctypes.RTLD_GLOBAL)
         # Compile with:
         #   clang++ bencpptest.cpp -emit-llvm -c -O0 -o bencpptest.bc
         with open("/workspaces/cuda-quantum/bencpptest.bc", "rb") as f:
@@ -60,6 +61,7 @@ if __name__ == '__main__':
         for i in range(1, comm.Get_size()):
             comm.send(bitcode, dest=i, tag=11)
     else:
+        ctypes.CDLL("/workspaces/cuda-quantum/benlib2.so", mode=ctypes.RTLD_GLOBAL)
         bitcode = comm.recv(source=0, tag=11)
 
     cudaq.parse_jit_and_run_bitcode(bitcode)

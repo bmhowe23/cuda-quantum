@@ -14,8 +14,11 @@
 
 int g_rank = -1;
 
+extern "C" void ben_dependent_hello();
+
 void mycppfunc() {
   std::cout << "printing from within myfunc()\n";
+  ben_dependent_hello();
   MPI_Comm_rank(MPI_COMM_WORLD, &g_rank);
   printf("Hello from within C++ using printf (rank = %d)!\n", g_rank);
 //   const auto t0 = std::chrono::system_clock::now();
