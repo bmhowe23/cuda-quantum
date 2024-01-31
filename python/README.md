@@ -83,6 +83,18 @@ encountering an error "The value of the MCA parameter `plm_rsh_agent` was set to
 a path that could not be found", please make sure you have an SSH Client
 installed.
 
+If you do not wish to use Conda but still wish to use the GPU-based simulators, you
+must install the following packages prior to performing `pip install cuda-quantum`:
+
+```console
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+sudo dpkg -i cuda-keyring_1.0-1_all.deb
+sudo apt-get update
+sudo apt-get -y install libcublas-11-8 libcusolver-11-8 cuda-cudart-11-8
+```
+
+(The above instructions are for Ubuntu but can be adjusted for other distributions.)
+
 ## Running CUDA Quantum
 
 You should now be able to import CUDA Quantum and start building quantum
