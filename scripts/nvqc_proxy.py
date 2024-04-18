@@ -68,7 +68,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     cmd_str = base64.b64decode(cmd_str_b64).decode('utf-8')
 
                     # Add environment variables
-                    custom_env = os.environ
+                    custom_env = os.environ.copy()
                     if "envVars" in json_data:
                         envVars = json_data["envVars"]
                         for var, val in envVars.items():
