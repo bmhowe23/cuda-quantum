@@ -72,7 +72,7 @@ if $verbose; then
   echo $DATA | jq
 fi
 
-USE_LOCAL=true
+USE_LOCAL=false
 
 # Use this when running locally
 if $USE_LOCAL; then
@@ -89,10 +89,13 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    NVQC_FUNCTION_VERSION_ID=fa29c725-7a19-41e7-b530-f74fc7e1b61e
+    #NVQC_FUNCTION_VERSION_ID=fa29c725-7a19-41e7-b530-f74fc7e1b61e
+    NVQC_FUNCTION_VERSION_ID=fe6eeca7-7600-4770-b9f6-1edc128dc5db
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
+
+  CURL_ARGS="-s --no-progress-meter --header 'Content-Type: application/json' --header \"Authorization: Bearer $NVQC_API_KEY\" --location"
   
   # Check the queue depth
   #res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}"
@@ -105,11 +108,15 @@ else
   DATA='{ "requestBody": '$DATA' }'
   # -w '%{http_code}'
   # -w '%{time_total}' \
-  res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
-  --no-progress-meter \
-  --header 'Content-Type: application/json' \
-  --header "Authorization: Bearer $NVQC_API_KEY" \
+  t0=$(date +%s%3N)
+  res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
   --data '{ "requestBody": { "rawPython": "'$CMD'" }}')
+  t1=$(date +%s%3N)
+  tdiff_ms=$(($t1-$t0))
+  if $verbose; then
+    echo "Post and first response took $tdiff_ms ms"
+  fi
+
   #echo $res
   reqId=$(echo $res | jq -r ".reqId")
   if [ "$reqId" == "null" ]; then
@@ -124,10 +131,7 @@ else
 
     # Poll the position until we're at the front of the queue
     while ! $executing; do
-      res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/${reqId}/position" \
-              --no-progress-meter \
-              --header 'Content-Type: application/json' \
-              --header "Authorization: Bearer $NVQC_API_KEY")
+      res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/queues/${reqId}/position")
       posInQueue=$(echo $res | jq -r '.positionInQueue')
       if [ "$posInQueue" == "null" ]; then
         # Maybe it already finished in the time we were waiting
@@ -162,10 +166,7 @@ else
 
     echo -n "."
     needNewline=true
-    res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}" \
-              --no-progress-meter \
-              --header 'Content-Type: application/json' \
-              --header "Authorization: Bearer $NVQC_API_KEY")
+    res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}")
     if [ "$(echo $res | jq -r '.reqId')" == "null" ]; then
       echo "Error in return value: $res"
       exit 1
