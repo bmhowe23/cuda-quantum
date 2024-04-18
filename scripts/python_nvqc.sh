@@ -89,13 +89,10 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    #NVQC_FUNCTION_VERSION_ID=fa29c725-7a19-41e7-b530-f74fc7e1b61e
     NVQC_FUNCTION_VERSION_ID=fe6eeca7-7600-4770-b9f6-1edc128dc5db
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
-
-  CURL_ARGS="-s --no-progress-meter --header 'Content-Type: application/json' --header \"Authorization: Bearer $NVQC_API_KEY\" --location"
   
   # Check the queue depth
   #res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}"
@@ -109,7 +106,10 @@ else
   # -w '%{http_code}'
   # -w '%{time_total}' \
   t0=$(date +%s%3N)
-  res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+  res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+  --no-progress-meter \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $NVQC_API_KEY" \
   --data '{ "requestBody": { "rawPython": "'$CMD'" }}')
   t1=$(date +%s%3N)
   tdiff_ms=$(($t1-$t0))
@@ -131,7 +131,10 @@ else
 
     # Poll the position until we're at the front of the queue
     while ! $executing; do
-      res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/queues/${reqId}/position")
+      res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/${reqId}/position" \
+              --no-progress-meter \
+              --header 'Content-Type: application/json' \
+              --header "Authorization: Bearer $NVQC_API_KEY")
       posInQueue=$(echo $res | jq -r '.positionInQueue')
       if [ "$posInQueue" == "null" ]; then
         # Maybe it already finished in the time we were waiting
@@ -166,7 +169,10 @@ else
 
     echo -n "."
     needNewline=true
-    res=$(curl $CURL_ARGS "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}")
+    res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}" \
+              --no-progress-meter \
+              --header 'Content-Type: application/json' \
+              --header "Authorization: Bearer $NVQC_API_KEY")
     if [ "$(echo $res | jq -r '.reqId')" == "null" ]; then
       echo "Error in return value: $res"
       exit 1
