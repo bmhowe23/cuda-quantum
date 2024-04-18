@@ -6,11 +6,8 @@
 # the terms of the Apache License 2.0 which accompanies this distribution.     #
 # ============================================================================ #
 
-build_configuration=Release
 useRawCommand=false
 verbose=false
-compiler_rt=false
-llvm_runtimes=""
 
 __optind__=$OPTIND
 OPTIND=1
@@ -66,6 +63,15 @@ else
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
+  
+  # Check the queue depth
+  #res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}"
+  #--no-progress-meter \
+  #--header 'Content-Type: application/json' \
+  #--header "Authorization: Bearer $NVQC_API_KEY")
+
+  #echo $res | jq -r '.queues[0].queueDepth'
+
   DATA='{ "requestBody": '$DATA' }'
   # -w '%{http_code}'
   # -w '%{time_total}' \
@@ -76,24 +82,73 @@ else
   --data '{ "requestBody": { "rawPython": "'$CMD'" }}')
   #echo $res
   reqId=$(echo $res | jq -r ".reqId")
-  if [ -z "$reqId" ]; then
+  if [ "$reqId" == "null" ]; then
     echo "Error in return value: $res"
     exit 1
   fi
+  needNewline=false
+  executing=false
   while [ "$(echo $res | jq -r '.status')" == "pending-evaluation" ]; do
     # We need to poll the results
+    lastPosition=999
+
+    # Poll the position until we're at the front of the queue
+    while ! $executing; do
+      res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/${reqId}/position" \
+              --no-progress-meter \
+              --header 'Content-Type: application/json' \
+              --header "Authorization: Bearer $NVQC_API_KEY")
+      posInQueue=$(echo $res | jq -r '.positionInQueue')
+      if [ "$posInQueue" == "null" ]; then
+        # Maybe it already finished in the time we were waiting
+        # echo "Error parsing position in queue for result: $res"
+        executing=true
+        break
+      fi
+      if [ "$posInQueue" == "0" ] && [ "$lastPosition" == "999" ]; then
+        # No need to pring anything ... execution had started right away
+        break
+      fi
+      if [ "$lastPosition" != "$posInQueue" ]; then
+        if [ "$lastPosition" == "999" ]; then
+          echo "Position in queue: $posInQueue"
+        else
+          echo "Position in queue changed from $lastPosition to $posInQueue"
+        fi
+        lastPosition=$posInQueue
+      fi
+      if [ "$posInQueue" == "0" ]; then
+        # Done polling
+        echo "Your job has started executing now"
+        executing=true
+        break
+      else
+        # Wait before polling again
+        echo -n "x"
+        needNewline=true
+        sleep 5
+      fi
+    done
+
     echo -n "."
+    needNewline=true
     res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}" \
               --no-progress-meter \
               --header 'Content-Type: application/json' \
               --header "Authorization: Bearer $NVQC_API_KEY")
-    if [ -z "$(echo $res | jq -r '.reqId')" ]; then
+    if [ "$(echo $res | jq -r '.reqId')" == "null" ]; then
       echo "Error in return value: $res"
       exit 1
     fi
   done
-  echo # newline
-  echo $res | jq
+  if $needNewline; then
+    echo
+  fi
+  if true && [ "$(echo $res | jq -r '.response.returncode')" = "0" ]; then
+    # Just print stdout
+    echo $res | jq -r '.response.stdout'
+  else
+    # Print everything
+    echo $res | jq
+  fi
 fi
-
-echo
