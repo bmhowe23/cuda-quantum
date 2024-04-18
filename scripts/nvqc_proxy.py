@@ -13,6 +13,11 @@ import requests
 import socketserver
 import sys
 import time
+import json
+import base64
+import tempfile
+import subprocess
+import os
 
 # This reverse proxy application is needed to span the small gaps when
 # `cudaq-qpud` is shutting down and starting up again. This small reverse proxy
@@ -47,6 +52,52 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/job':
+            content_length = int(self.headers['Content-Length'])
+            if content_length > 0:
+                post_body = self.rfile.read(content_length)
+                #print(post_body)
+                json_data = json.loads(post_body)
+                #print("Hello world!", post_body)
+                #print(json_data)
+                # TODO - Have to handle the case where we're supposed to fetch the data from assets instead
+                # Run this Linux command to invoke this:
+                # CMD='print("hello from python")'; CMD2=$(echo -n $CMD | base64 --wrap=0); DATA='{"rawPython":"'$CMD2'"}'; curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
+                if "rawPython" in json_data:
+                    cmd_str_b64 = json_data["rawPython"]
+                    #print(cmd_str_b64)
+                    cmd_str = base64.b64decode(cmd_str_b64).decode('utf-8')
+                    print(cmd_str)
+                    file2delete = ''
+                    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                        tmp.write(cmd_str.encode('utf-8'))
+                        tmp.close()
+                        file2delete = tmp.name
+                        print('Wrote data to', tmp.name)
+                        # Should this be asynchronous?
+                        result = subprocess.run(["/usr/bin/python3"] +
+                                                [tmp.name],
+                                                capture_output=True,
+                                                text=True)
+                        print(result.stdout)
+                    # Write this out to a file and then execute it???
+                    if len(file2delete) > 0:
+                        print("Deleting", file2delete)
+                        os.unlink(file2delete)
+
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'application/json')
+
+                res = dict()
+                res['stdout'] = result.stdout
+                res['stderr'] = result.stderr
+                message = json.dumps(res).encode(
+                    'utf-8'
+                )  # result.stdout.encode('utf-8') #json.dumps(res.json()).encode('utf-8')
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self.wfile.write(message)
+                return
+
             qpud_up = False
             retries = 0
             qpud_url = 'http://localhost:' + str(QPUD_PORT)
