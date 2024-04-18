@@ -9,12 +9,23 @@
 useRawCommand=false
 verbose=false
 
+declare -A ENV_VARS # environment variables provided by the user
+
+add_to_json() {
+  local var_name=$(echo "$1" | cut -d '=' -f 1)
+  local var_value=$(echo "$1" | cut -d '=' -f 2)
+  ENV_VARS["$var_name"]="$var_value"
+}
+
 __optind__=$OPTIND
 OPTIND=1
-while getopts "c:" opt; do
+while getopts ":c:e:" opt; do
   case $opt in
     c) rawCommand="$OPTARG"
     useRawCommand=true
+    ;;
+    # Custom environment variables
+    e) add_to_json "$OPTARG"
     ;;
     \?) echo "Invalid command line option -$OPTARG" >&2
     exit 1
@@ -22,6 +33,19 @@ while getopts "c:" opt; do
     ;;
   esac
 done
+
+# Convert associative array to JSON format
+jsonEnvVars="{"
+first=1
+for k in "${!ENV_VARS[@]}"; do
+  if [ $first -eq 1 ]; then
+    first=0
+  else
+    jsonEnvVars+=","
+  fi
+  jsonEnvVars+="\"$k\":\"${ENV_VARS[$k]}\""
+done
+jsonEnvVars+="}"
 
 args=("$@")
 
@@ -40,7 +64,7 @@ else
   CMD=$(cat $FILENAME | base64 --wrap=0)
 fi
 
-DATA='{"rawPython":"'$CMD'"}'
+DATA='{"rawPython":"'$CMD'","envVars":'$jsonEnvVars'}'
 
 USE_LOCAL=false
 

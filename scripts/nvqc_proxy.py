@@ -66,7 +66,14 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     cmd_str_b64 = json_data["rawPython"]
                     #print(cmd_str_b64)
                     cmd_str = base64.b64decode(cmd_str_b64).decode('utf-8')
-                    print(cmd_str)
+
+                    # Add environment variables
+                    custom_env = os.environ
+                    if "envVars" in json_data:
+                        envVars = json_data["envVars"]
+                        for var, val in envVars.items():
+                            custom_env[var] = val
+
                     file2delete = ''
                     with tempfile.NamedTemporaryFile(delete=False) as tmp:
                         tmp.write(cmd_str.encode('utf-8'))
@@ -77,6 +84,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                         result = subprocess.run(["/usr/bin/python3"] +
                                                 [tmp.name],
                                                 capture_output=True,
+                                                env=custom_env,
                                                 text=True)
                         print(result.stdout)
                     # Write this out to a file and then execute it???
