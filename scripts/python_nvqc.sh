@@ -67,11 +67,33 @@ else
     #exit 1
   fi
   DATA='{ "requestBody": '$DATA' }'
-  # FIXME - set function ID
-  curl --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+  # -w '%{http_code}'
+  # -w '%{time_total}' \
+  res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+  --no-progress-meter \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $NVQC_API_KEY" \
-  --data '{ "requestBody": { "rawPython": "'$CMD'" }}'
+  --data '{ "requestBody": { "rawPython": "'$CMD'" }}')
+  #echo $res
+  reqId=$(echo $res | jq -r ".reqId")
+  if [ -z "$reqId" ]; then
+    echo "Error in return value: $res"
+    exit 1
+  fi
+  while [ "$(echo $res | jq -r '.status')" == "pending-evaluation" ]; do
+    # We need to poll the results
+    echo -n "."
+    res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/status/${reqId}" \
+              --no-progress-meter \
+              --header 'Content-Type: application/json' \
+              --header "Authorization: Bearer $NVQC_API_KEY")
+    if [ -z "$(echo $res | jq -r '.reqId')" ]; then
+      echo "Error in return value: $res"
+      exit 1
+    fi
+  done
+  echo # newline
+  echo $res | jq
 fi
 
 echo
