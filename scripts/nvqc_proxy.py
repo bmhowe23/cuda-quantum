@@ -90,9 +90,8 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 res = dict()
                 res['stdout'] = result.stdout
                 res['stderr'] = result.stderr
-                message = json.dumps(res).encode(
-                    'utf-8'
-                )  # result.stdout.encode('utf-8') #json.dumps(res.json()).encode('utf-8')
+                res['returncode'] = result.returncode
+                message = json.dumps(res).encode('utf-8')
                 self.send_header("Content-Length", str(len(message)))
                 self.end_headers()
                 self.wfile.write(message)
