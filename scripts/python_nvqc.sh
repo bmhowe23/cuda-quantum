@@ -19,13 +19,15 @@ add_to_json() {
 
 __optind__=$OPTIND
 OPTIND=1
-while getopts ":c:e:" opt; do
+while getopts ":c:e:v" opt; do
   case $opt in
     c) rawCommand="$OPTARG"
     useRawCommand=true
     ;;
     # Custom environment variables
     e) add_to_json "$OPTARG"
+    ;;
+    v) verbose=true
     ;;
     \?) echo "Invalid command line option -$OPTARG" >&2
     exit 1
@@ -65,8 +67,12 @@ else
 fi
 
 DATA='{"rawPython":"'$CMD'","envVars":'$jsonEnvVars'}'
+if $verbose; then
+  echo "JSON data to submit:"
+  echo $DATA | jq
+fi
 
-USE_LOCAL=false
+USE_LOCAL=true
 
 # Use this when running locally
 if $USE_LOCAL; then
