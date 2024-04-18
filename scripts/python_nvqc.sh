@@ -27,7 +27,6 @@ while getopts "c:" opt; do
 done
 
 args=("$@")
-#echo "OPTIND is $OPTIND ${args[$((OPTIND-1))]}"
 
 if $useRawCommand; then
   CMD=$(echo -n $rawCommand | base64 --wrap=0)
@@ -45,5 +44,34 @@ else
 fi
 
 DATA='{"rawPython":"'$CMD'"}'
-curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
+
+USE_LOCAL=false
+
+# Use this when running locally
+if $USE_LOCAL; then
+  curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
+else
+  # Use this when running with NVCF
+  if [ -z "$NVQC_API_KEY" ]; then
+    echo "You need to set your NVQC_API_KEY environment variable"
+    exit 1
+  fi
+  if [ -z "$NVQC_FUNCTION_ID" ]; then
+    NVQC_FUNCTION_ID=e53f57ed-6e04-4e42-b491-5c75b2132148
+    #echo "You need to set the NVQC_FUNCTION_ID environment variable"
+    #exit 1
+  fi
+  if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
+    NVQC_FUNCTION_VERSION_ID=fa29c725-7a19-41e7-b530-f74fc7e1b61e
+    #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
+    #exit 1
+  fi
+  DATA='{ "requestBody": '$DATA' }'
+  # FIXME - set function ID
+  curl --location "https://api.nvcf.nvidia.com/v2/nvcf/exec/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $NVQC_API_KEY" \
+  --data '{ "requestBody": { "rawPython": "'$CMD'" }}'
+fi
+
 echo
