@@ -73,8 +73,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     if "envVars" in json_data:
                         envVars = json_data["envVars"]
                         for var, val in envVars.items():
-                            print(var, val, type(var), type(val))
-                            custom_env[str(var)] = str(val)
+                            custom_env[var] = val
 
                     file2delete = ''
                     with tempfile.NamedTemporaryFile() as tmp:
@@ -89,16 +88,11 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                                 env=custom_env,
                                                 text=True)
                         print(result.stdout)
-                    # Write this out to a file and then execute it???
-                    #if len(file2delete) > 0:
-                    #    print("Deleting", file2delete)
-                    #    os.unlink(file2delete)
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header('Content-Type', 'application/json')
 
                 res = dict()
-                res['envVars'] = json_data["envVars"]
                 res['stdout'] = result.stdout
                 res['stderr'] = result.stderr
                 res['returncode'] = result.returncode

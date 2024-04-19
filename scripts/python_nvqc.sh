@@ -89,7 +89,9 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    NVQC_FUNCTION_VERSION_ID=fe6eeca7-7600-4770-b9f6-1edc128dc5db
+    #NVQC_FUNCTION_VERSION_ID=fe6eeca7-7600-4770-b9f6-1edc128dc5db
+    NVQC_FUNCTION_VERSION_ID=73cbc473-dc48-4533-a78d-04d81f7e9dcf
+    #NVQC_FUNCTION_VERSION_ID=ef691383-cc4a-4b99-8eb0-df3c9de90f77
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
@@ -110,7 +112,7 @@ else
   --no-progress-meter \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $NVQC_API_KEY" \
-  --data '{ "requestBody": { "rawPython": "'$CMD'" }}')
+  --data "$DATA")
   t1=$(date +%s%3N)
   tdiff_ms=$(($t1-$t0))
   if $verbose; then
