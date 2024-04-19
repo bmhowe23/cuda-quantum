@@ -51,8 +51,18 @@ jsonEnvVars+="}"
 
 args=("$@")
 
+DO_GZIP=true
+GZIP_VAL=0
+if $DO_GZIP; then
+  GZIP_VAL=1
+fi
+
 if $useRawCommand; then
-  CMD=$(echo -n $rawCommand | base64 --wrap=0)
+  if $DO_GZIP; then
+    CMD=$(echo -n $rawCommand | gzip | base64 --wrap=0)
+  else
+    CMD=$(echo -n $rawCommand | base64 --wrap=0)
+  fi
 else
   FILENAME=${args[$((OPTIND-1))]}
   if [ -z "$FILENAME" ]; then
@@ -63,10 +73,14 @@ else
     echo "Filename $FILENAME doesn't exist ... exiting"
     exit 1
   fi
-  CMD=$(cat $FILENAME | base64 --wrap=0)
+  if $DO_GZIP; then
+    CMD=$(cat $FILENAME | gzip | base64 --wrap=0)
+  else
+    CMD=$(cat $FILENAME | base64 --wrap=0)
+  fi
 fi
 
-DATA='{"rawPython":"'$CMD'","envVars":'$jsonEnvVars'}'
+DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars'}'
 if $verbose; then
   echo "JSON data to submit:"
   echo $DATA | jq
@@ -90,17 +104,24 @@ else
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
     #NVQC_FUNCTION_VERSION_ID=fe6eeca7-7600-4770-b9f6-1edc128dc5db
-    NVQC_FUNCTION_VERSION_ID=73cbc473-dc48-4533-a78d-04d81f7e9dcf
-    #NVQC_FUNCTION_VERSION_ID=ef691383-cc4a-4b99-8eb0-df3c9de90f77
+    #NVQC_FUNCTION_VERSION_ID=73cbc473-dc48-4533-a78d-04d81f7e9dcf
+    NVQC_FUNCTION_VERSION_ID=ef691383-cc4a-4b99-8eb0-df3c9de90f77
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
   
   # Check the queue depth
-  #res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}"
-  #--no-progress-meter \
-  #--header 'Content-Type: application/json' \
-  #--header "Authorization: Bearer $NVQC_API_KEY")
+#   t0=$(date +%s%3N)
+#   res=$(curl -s --location "https://api.nvcf.nvidia.com/v2/nvcf/queues/functions/${NVQC_FUNCTION_ID}/versions/${NVQC_FUNCTION_VERSION_ID}" \
+#   --no-progress-meter \
+#   --header 'Content-Type: application/json' \
+#   --header "Authorization: Bearer $NVQC_API_KEY")
+#   t1=$(date +%s%3N)
+#   tdiff_ms=$(($t1-$t0))
+#   if $verbose; then
+#     echo "Queue depth query to $tdiff_ms ms"
+#   fi
+#   exit
 
   #echo $res | jq -r '.queues[0].queueDepth'
 

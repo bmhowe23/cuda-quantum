@@ -18,6 +18,7 @@ import base64
 import tempfile
 import subprocess
 import os
+import gzip
 
 # This reverse proxy application is needed to span the small gaps when
 # `cudaq-qpud` is shutting down and starting up again. This small reverse proxy
@@ -65,7 +66,10 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 if "rawPython" in json_data:
                     cmd_str_b64 = json_data["rawPython"]
                     #print(cmd_str_b64)
-                    cmd_str = base64.b64decode(cmd_str_b64).decode('utf-8')
+                    cmd_str = base64.b64decode(cmd_str_b64)
+                    if json_data["gzip"] > 0:
+                        cmd_str = gzip.decompress(cmd_str)
+                    cmd_str = cmd_str.decode('utf-8')
 
                     # Add environment variables
                     custom_env = os.environ.copy()
