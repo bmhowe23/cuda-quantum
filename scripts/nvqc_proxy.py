@@ -73,13 +73,13 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     if "envVars" in json_data:
                         envVars = json_data["envVars"]
                         for var, val in envVars.items():
-                            #print(var, val)
+                            print(var, val, type(var), type(val))
                             custom_env[str(var)] = str(val)
 
                     file2delete = ''
-                    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    with tempfile.NamedTemporaryFile() as tmp:
                         tmp.write(cmd_str.encode('utf-8'))
-                        tmp.close()
+                        tmp.flush()
                         file2delete = tmp.name
                         print('Wrote data to', tmp.name)
                         # Should this be asynchronous?
@@ -90,14 +90,15 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                                 text=True)
                         print(result.stdout)
                     # Write this out to a file and then execute it???
-                    if len(file2delete) > 0:
-                        print("Deleting", file2delete)
-                        os.unlink(file2delete)
+                    #if len(file2delete) > 0:
+                    #    print("Deleting", file2delete)
+                    #    os.unlink(file2delete)
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header('Content-Type', 'application/json')
 
                 res = dict()
+                res['envVars'] = json_data["envVars"]
                 res['stdout'] = result.stdout
                 res['stderr'] = result.stderr
                 res['returncode'] = result.returncode
