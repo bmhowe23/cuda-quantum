@@ -79,11 +79,9 @@ class Server(http.server.SimpleHTTPRequestHandler):
                         for var, val in envVars.items():
                             custom_env[var] = val
 
-                    file2delete = ''
                     with tempfile.NamedTemporaryFile() as tmp:
                         tmp.write(cmd_str.encode('utf-8'))
                         tmp.flush()
-                        file2delete = tmp.name
                         print('Wrote data to', tmp.name)
                         # Should this be asynchronous?
                         result = subprocess.run(["/usr/bin/python3"] +
