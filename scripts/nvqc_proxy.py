@@ -69,10 +69,12 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
                     # Add environment variables
                     custom_env = os.environ.copy()
+                    custom_env['BMH_VAR'] = 'BMH_VAL'
                     if "envVars" in json_data:
                         envVars = json_data["envVars"]
                         for var, val in envVars.items():
-                            custom_env[var] = val
+                            #print(var, val)
+                            custom_env[str(var)] = str(val)
 
                     file2delete = ''
                     with tempfile.NamedTemporaryFile(delete=False) as tmp:
