@@ -202,6 +202,10 @@ else
   if $needNewline; then
     echo
   fi
+  responseReference="$(echo $res | jq -r '.responseReference')"
+  if [ "$responseReference" != "null" ]; then
+    res=$(curl -s --location "${responseReference}" --no-progress-meter | gzip -d)
+  fi
   if true && [ "$(echo $res | jq -r '.response.returncode')" = "0" ]; then
     # Just print stdout
     echo $res | jq -r '.response.stdout'
