@@ -81,13 +81,18 @@ else
     fi
     thisArg=${args[$k]}
     if [ -e $thisArg ]; then
-      # This argument is a file. We need to upload the file, too.
-      if [ $firstFile -eq 1 ]; then
-        firstFile=0
+      if [[ $thisArg == /* ]]; then
+        echo "Argument '$thisArg' is a file that is a full path, so it cannot be uploaded"
+        exit 1
       else
-        files+=","
+        # This argument is a file. We need to upload the file, too.
+        if [ $firstFile -eq 1 ]; then
+          firstFile=0
+        else
+          files+=","
+        fi
+        files+="\"$thisArg\":\"$(cat $thisArg | gzip | base64 --wrap=0)\""
       fi
-      files+="\"$thisArg\":\"$(cat $thisArg | gzip | base64 --wrap=0)\""
     fi
     cliArgs+="\"$thisArg\""
   done
@@ -111,7 +116,7 @@ fi
 
 DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars',"cliArgs":'$cliArgs',"files":'$files'}'
 if $verbose; then
-  echo "JSON data to submit:"
+  echo "JSON data to submit (size=${#DATA}):"
   echo $DATA | jq
 fi
 

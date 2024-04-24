@@ -81,36 +81,42 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     if "cliArgs" in json_data:
                         cliArgs = json_data["cliArgs"]
 
-                    # Write files for the incoming JSON data
-                    incomingFiles = list()
-                    if "files" in json_data:
-                        files = json_data["files"]
-                        for fileName, fileContents in files.items():
-                            # Create additional temp files and clean them up later
-                            if not os.path.exists(fileName):
-                                print('Creating', fileName)
-                                incomingFiles.append(fileName)
-                                fileContentsBytes = gzip.decompress(
-                                    base64.b64decode(fileContents))
-                                with open(fileName, "wb") as fd:
-                                    fd.write(fileContentsBytes)
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        # Write files for the incoming JSON data
+                        incomingFiles = list()
+                        if "files" in json_data:
+                            files = json_data["files"]
+                            for fileName, fileContents in files.items():
+                                # Create additional temp files and clean them up later
+                                newName = os.path.normpath(tmpdir + "/" +
+                                                           fileName)
+                                if not os.path.exists(newName):
+                                    print('Creating', newName)
+                                    fileContentsBytes = gzip.decompress(
+                                        base64.b64decode(fileContents))
+                                    incomingFiles.append(newName)
+                                    os.makedirs(os.path.dirname(newName),
+                                                exist_ok=True)
+                                    with open(newName, "wb") as fd:
+                                        fd.write(fileContentsBytes)
 
-                    with tempfile.NamedTemporaryFile() as tmp:
-                        tmp.write(cmd_str.encode('utf-8'))
-                        tmp.flush()
-                        print('Wrote data to', tmp.name)
-                        # Should this be asynchronous?
-                        result = subprocess.run(["/usr/bin/python3"] +
-                                                [tmp.name] + cliArgs,
-                                                capture_output=True,
-                                                env=custom_env,
-                                                text=True)
-                        print(result.stdout)
+                        with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
+                            tmp.write(cmd_str.encode('utf-8'))
+                            tmp.flush()
+                            print('Wrote data to', tmp.name)
+                            # Should this be asynchronous?
+                            result = subprocess.run(["/usr/bin/python3"] +
+                                                    [tmp.name] + cliArgs,
+                                                    capture_output=True,
+                                                    cwd=tmpdir,
+                                                    env=custom_env,
+                                                    text=True)
+                            print(result.stdout)
 
-                    # Cleanup (FIXME - move to finally section)
-                    for file2remove in incomingFiles:
-                        print('Removing', fileName)
-                        os.remove(file2remove)
+                        # Cleanup (FIXME - move to finally section)
+                        for file2remove in incomingFiles:
+                            print('Removing', file2remove)
+                            os.remove(file2remove)
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header('Content-Type', 'application/json')
