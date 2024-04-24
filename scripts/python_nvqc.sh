@@ -65,6 +65,20 @@ if $useRawCommand; then
   fi
 else
   FILENAME=${args[$((OPTIND-1))]}
+
+  # Parse remaining items as regular command line arguments for the application
+  cliArgs="["
+  first=1
+  for k in $(seq $OPTIND $((${#args[@]}-1))); do
+    if [ $first -eq 1 ]; then
+      first=0
+    else
+      cliArgs+=","
+    fi
+    cliArgs+="\"${args[$k]}\""
+  done
+  cliArgs+="]"
+
   if [ -z "$FILENAME" ]; then
     echo "No filename provided...exiting"
     exit 1
@@ -80,7 +94,7 @@ else
   fi
 fi
 
-DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars'}'
+DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars',"cliArgs":'$cliArgs'}'
 if $verbose; then
   echo "JSON data to submit:"
   echo $DATA | jq

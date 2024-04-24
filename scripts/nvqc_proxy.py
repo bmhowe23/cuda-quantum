@@ -73,11 +73,13 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
                     # Add environment variables
                     custom_env = os.environ.copy()
-                    custom_env['BMH_VAR'] = 'BMH_VAL'
                     if "envVars" in json_data:
                         envVars = json_data["envVars"]
                         for var, val in envVars.items():
                             custom_env[var] = val
+                    cliArgs = list()
+                    if "cliArgs" in json_data:
+                        cliArgs = json_data["cliArgs"]
 
                     with tempfile.NamedTemporaryFile() as tmp:
                         tmp.write(cmd_str.encode('utf-8'))
@@ -85,7 +87,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                         print('Wrote data to', tmp.name)
                         # Should this be asynchronous?
                         result = subprocess.run(["/usr/bin/python3"] +
-                                                [tmp.name],
+                                                [tmp.name] + cliArgs,
                                                 capture_output=True,
                                                 env=custom_env,
                                                 text=True)
