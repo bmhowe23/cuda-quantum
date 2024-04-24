@@ -81,6 +81,20 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     if "cliArgs" in json_data:
                         cliArgs = json_data["cliArgs"]
 
+                    # Write files for the incoming JSON data
+                    incomingFiles = list()
+                    if "files" in json_data:
+                        files = json_data["files"]
+                        for fileName, fileContents in files.items():
+                            # Create additional temp files and clean them up later
+                            if not os.path.exists(fileName):
+                                print('Creating', fileName)
+                                incomingFiles.append(fileName)
+                                fileContentsBytes = gzip.decompress(
+                                    base64.b64decode(fileContents))
+                                with open(fileName, "wb") as fd:
+                                    fd.write(fileContentsBytes)
+
                     with tempfile.NamedTemporaryFile() as tmp:
                         tmp.write(cmd_str.encode('utf-8'))
                         tmp.flush()
@@ -92,6 +106,11 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                                 env=custom_env,
                                                 text=True)
                         print(result.stdout)
+
+                    # Cleanup (FIXME - move to finally section)
+                    for file2remove in incomingFiles:
+                        print('Removing', fileName)
+                        os.remove(file2remove)
 
                 self.send_response(HTTPStatus.OK)
                 self.send_header('Content-Type', 'application/json')

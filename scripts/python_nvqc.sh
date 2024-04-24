@@ -63,21 +63,36 @@ if $useRawCommand; then
   else
     CMD=$(echo -n $rawCommand | base64 --wrap=0)
   fi
+  cliArgs="[]"
+  files="{}"
 else
   FILENAME=${args[$((OPTIND-1))]}
 
   # Parse remaining items as regular command line arguments for the application
   cliArgs="["
   first=1
+  files="{"
+  firstFile=1
   for k in $(seq $OPTIND $((${#args[@]}-1))); do
     if [ $first -eq 1 ]; then
       first=0
     else
       cliArgs+=","
     fi
-    cliArgs+="\"${args[$k]}\""
+    thisArg=${args[$k]}
+    if [ -e $thisArg ]; then
+      # This argument is a file. We need to upload the file, too.
+      if [ $firstFile -eq 1 ]; then
+        firstFile=0
+      else
+        files+=","
+      fi
+      files+="\"$thisArg\":\"$(cat $thisArg | gzip | base64 --wrap=0)\""
+    fi
+    cliArgs+="\"$thisArg\""
   done
   cliArgs+="]"
+  files+="}"
 
   if [ -z "$FILENAME" ]; then
     echo "No filename provided...exiting"
@@ -94,7 +109,7 @@ else
   fi
 fi
 
-DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars',"cliArgs":'$cliArgs'}'
+DATA='{"rawPython":"'$CMD'","gzip":'$GZIP_VAL',"envVars":'$jsonEnvVars',"cliArgs":'$cliArgs',"files":'$files'}'
 if $verbose; then
   echo "JSON data to submit:"
   echo $DATA | jq
