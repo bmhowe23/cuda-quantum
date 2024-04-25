@@ -265,7 +265,7 @@ else
   fi
   if true && [ "$(echo $res | jq -r '.response.returncode')" = "0" ]; then
     # Just print stdout
-    echo $res | jq -r '.response.stdout'
+    echo $res | jq -j '.response.stdout'
   else
     # Print everything
     echo $res | jq
