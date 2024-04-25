@@ -17,15 +17,19 @@ add_to_json() {
   ENV_VARS["$var_name"]="$var_value"
 }
 
+FILES=()
+
 __optind__=$OPTIND
 OPTIND=1
-while getopts ":c:e:v" opt; do
+while getopts ":c:e:f:v" opt; do
   case $opt in
     c) rawCommand="$OPTARG"
     useRawCommand=true
     ;;
     # Custom environment variables
     e) add_to_json "$OPTARG"
+    ;;
+    f) FILES+=($OPTARG)
     ;;
     v) verbose=true
     ;;
@@ -66,13 +70,31 @@ if $useRawCommand; then
   cliArgs="[]"
   files="{}"
 else
+  # Process any elements in $FILES
+  files="{"
+  firstFile=1
+  for f in ${FILES[@]}; do
+    if [ $firstFile -eq 1 ]; then
+      firstFile=0
+    else
+      files+=","
+    fi
+    # Allow user to specify localpath:remotepath
+    if echo $f | grep -q ':'; then
+      localf=$(echo $f | cut -d':' -f1)
+      remotef=$(echo $f | cut -d':' -f2)
+    else
+      localf=$f
+      remotef=$f
+    fi
+    files+="\"$remotef\":\"$(cat $localf | gzip | base64 --wrap=0)\""
+  done
+
   FILENAME=${args[$((OPTIND-1))]}
 
   # Parse remaining items as regular command line arguments for the application
   cliArgs="["
   first=1
-  files="{"
-  firstFile=1
   for k in $(seq $OPTIND $((${#args[@]}-1))); do
     if [ $first -eq 1 ]; then
       first=0
@@ -81,7 +103,8 @@ else
     fi
     thisArg=${args[$k]}
     if [ -e $thisArg ]; then
-      if [[ $thisArg == /* ]]; then
+      # Check for absolute paths relative paths that go up a directory (FIXME - handle blah/../../../usr/local/blah.txt)
+      if [[ $thisArg == /* ]] || [[ $thisArg == ..* ]]; then
         echo "Argument '$thisArg' is a file that is a full path, so it cannot be uploaded"
         exit 1
       else
@@ -137,7 +160,8 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    NVQC_FUNCTION_VERSION_ID=593e497b-6c64-4026-8a16-814de748bcde
+    #NVQC_FUNCTION_VERSION_ID=74868f44-cf70-41dc-a64e-28c75d0c8d42
+    NVQC_FUNCTION_VERSION_ID=cc1ff2c3-027d-4c23-ac10-4ae0bfd6d18a
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi

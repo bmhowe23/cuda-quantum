@@ -90,6 +90,12 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                 # Create additional temp files and clean them up later
                                 newName = os.path.normpath(tmpdir + "/" +
                                                            fileName)
+                                if not newName.startswith(tmpdir):
+                                    print(
+                                        'Skipping', newName,
+                                        'because it doesn\'t start with the correct prefix'
+                                    )
+                                    continue
                                 if not os.path.exists(newName):
                                     print('Creating', newName)
                                     fileContentsBytes = gzip.decompress(

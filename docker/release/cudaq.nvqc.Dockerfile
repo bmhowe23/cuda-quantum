@@ -18,6 +18,8 @@ FROM $base_image as nvcf_image
 
 ADD scripts/nvqc_proxy.py /
 
+RUN python3 -m pip install scipy==1.10.1 openfermionpyscf==0.5 'h5py<3.11' pyscf
+
 # Launch script: launch cudaq-qpud (nvcf mode) with MPI ranks == Number of NVIDIA GPUs
 # IMPORTANT: 
 # (1) NVCF function must set container environment variable `NUM_GPUS`
