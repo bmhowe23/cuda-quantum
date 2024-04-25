@@ -160,8 +160,7 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    #NVQC_FUNCTION_VERSION_ID=74868f44-cf70-41dc-a64e-28c75d0c8d42
-    NVQC_FUNCTION_VERSION_ID=cc1ff2c3-027d-4c23-ac10-4ae0bfd6d18a
+    NVQC_FUNCTION_VERSION_ID=9b987d02-feec-427b-98cc-5d548c97319a
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
