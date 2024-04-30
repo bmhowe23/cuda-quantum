@@ -8,21 +8,23 @@
 
 # OpenAPI description of CUDA Quantum Remote Simulator REST API.
 # It is rendered into the API HTML docs, to be included in the full CUDA Quantum documentation.
-swagger: "2.0"
+swagger: "3.0"
 info:
   title: CUDA Quantum Remote Simulation Runtime REST API
-  version: "1.0.0"
+  version: "2.0.0"
 paths:
   /job:
     post:
       summary: Create a quantum simulation job
       description: |
-        Requests execution (simulation) of quantun kernels on the server. The server employs long polling, hence it will keep the request open until the simulation completed.
+        Requests execution (simulation) of quantum kernels on the server. The server employs long polling, hence it will keep the request open until the simulation completed.
       parameters:
         - name: job request
           in: body
           schema:
-            $ref: '#/definitions/RestRequest'
+            oneOf:
+              - $ref: '#/definitions/RestRequest'
+              - $ref: '#/definitions/GenericCmdRequest'
       responses:
         200:
           description: Execution results.
@@ -32,8 +34,50 @@ paths:
               - executionContext
             properties:
               executionContext:
-                $ref: '#/definitions/ResultExecutionContext'
+                schema:
+                  oneOf:
+                    - $ref: '#/definitions/ResultExecutionContext'
+                    - $ref: '#/definitions/GenericCmdResult'
 definitions:
+  Files:
+    type: object
+    properties:
+      remote_path:
+        type: string
+        description: Path to where to place this file on the remote server
+        example: path/to/file.txt
+      asset_path:
+        type: string
+        description: A pre-signed URL with file contents
+  GenericCmdRequest:
+    type: object
+    properties:
+      cliArgs:
+        type: array
+        items:
+          type: string
+      files:
+        type: array
+        items:
+          type: object
+        $ref: '#/definitions/Files'
+  GenericCmdResult:
+    type: object
+    properties:
+      returncode:
+        type: int64
+        description: Return code of result
+      stdout:
+        type: string
+        description: stdout of program
+      stderr:
+        type: string
+        description: stderr program
+      files:
+        type: array
+        items:
+          type: object
+        $ref: '#/definitions/Files'
   RestRequest:
     type: object
     required:
