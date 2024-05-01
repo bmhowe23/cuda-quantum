@@ -10,8 +10,8 @@ import os
 
 
 class NVQCInputFile:
-    local_path = None
-    remote_path = None
+    local_path: str
+    remote_path: str
 
     def __init__(self, local_path, remote_path=None):
         """
@@ -25,8 +25,8 @@ class NVQCInputFile:
 
 
 class NVQCOutputFile:
-    local_path = None
-    remote_path = None
+    local_path: str
+    remote_path: str
 
     def __init__(self, remote_path, local_path=None):
         """
@@ -40,9 +40,9 @@ class NVQCOutputFile:
 
 
 class NVQCRequest:
-    requestId = None
-    result = None
-    parent_client = None
+    requestId: str
+    result: str
+    parent_client: 'NVQCClient'
 
     def __init__(self, parent_client: 'NVQCClient'):
         pass
@@ -76,13 +76,13 @@ class NVQCClient:
     A client to access Nvidia Quantum Cloud
     """
 
-    ngpus = 1
+    ngpus: int
     """The number of GPUs this client will use on the server"""
 
-    token = None
+    token: str
     """The NVQC API KEY that starts with `nvcf-`."""
 
-    requests = list()
+    requests: list[NVQCRequest]
     """List of outstanding requests (`NVQCRequest`)"""
 
     def __init__(self, token=None, ngpus=None, functionID=None, versionID=None):
@@ -99,6 +99,7 @@ class NVQCClient:
             `versionID` (`str`): The NVQC function version ID (defaults to
             automatically searching)
         """
+        self.ngpus = 1
         pass
 
     def addInputFile(self, f: NVQCInputFile):
