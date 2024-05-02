@@ -9,7 +9,7 @@
 import os
 
 
-class NVQCInputFile:
+class nvqc_input_file:
     local_path: str
     remote_path: str
 
@@ -24,7 +24,7 @@ class NVQCInputFile:
         pass
 
 
-class NVQCOutputFile:
+class nvqc_output_file:
     local_path: str
     remote_path: str
 
@@ -39,12 +39,12 @@ class NVQCOutputFile:
         pass
 
 
-class NVQCRequest:
+class nvqc_request:
     requestId: str
     result: str
-    parent_client: 'NVQCClient'
+    parent_client: 'nvqc_client'
 
-    def __init__(self, parent_client: 'NVQCClient'):
+    def __init__(self, parent_client: 'nvqc_client'):
         pass
 
     def result(self):
@@ -63,7 +63,7 @@ class NVQCRequest:
         """
         pass
 
-    def dumpOutputFiles(self):
+    def dump_output_files(self):
         """
         When the server provides output files back to the client, call this
         function to write them out to local disk.
@@ -71,7 +71,7 @@ class NVQCRequest:
         pass
 
 
-class NVQCClient:
+class nvqc_client:
     """
     A client to access Nvidia Quantum Cloud
     """
@@ -82,8 +82,8 @@ class NVQCClient:
     token: str
     """The NVQC API KEY that starts with `nvcf-`."""
 
-    requests: list[NVQCRequest]
-    """List of outstanding requests (`NVQCRequest`)"""
+    requests: list[nvqc_request]
+    """List of outstanding requests (`nvqc_request`)"""
 
     def __init__(self, token=None, ngpus=None, functionID=None, versionID=None):
         """
@@ -102,44 +102,44 @@ class NVQCClient:
         self.ngpus = 1
         pass
 
-    def addInputFile(self, f: NVQCInputFile):
+    def add_input_file(self, f: nvqc_input_file):
         """
         Add a local file to the client so that the file can be uploaded when
         running a main program.
 
         Args:
-            `f` (`NVQCInputFile`): A single file to add to the client
+            `f` (`nvqc_input_file`): A single file to add to the client
         """
         pass
 
-    def addInputFiles(self, f: list[NVQCInputFile]):
+    def add_input_files(self, f: list[nvqc_input_file]):
         """
         Add a list of local file to the client so that the files can be uploaded
         when running a main program.
 
         Args:
-            `f` (`list[NVQCInputFile]`): A list of files to add to the client
+            `f` (`list[nvqc_input_file]`): A list of files to add to the client
         """
         pass
 
-    def addOutputFile(self, f: NVQCOutputFile):
+    def addOutputFile(self, f: nvqc_output_file):
         """
         When your NVQC job submission is complete, download a file that your
         program created to your local host.
 
         Args:
-            `f` (`NVQCOutputFile`) : A file that your program produced that you
+            `f` (`nvqc_output_file`) : A file that your program produced that you
             want to download from NVQC once your job completes execution.
         """
         pass
 
-    def addOutputFiles(self, f: list[NVQCOutputFile]):
+    def addOutputFiles(self, f: list[nvqc_output_file]):
         """
         When your NVQC job submission is complete, download a list of files that
         your program created to your local host.
 
         Args:
-            `f` (`list[NVQCOutputFile]`) : A list of files that your program
+            `f` (`list[nvqc_output_file]`) : A list of files that your program
             produced that you want to download from NVQC once your job completes
             execution.
         """
@@ -158,18 +158,18 @@ class NVQCClient:
     def run(self, cliArgs: list[str]):
         """
         Run a program on NVIDIA Quantum Cloud. This submits the job
-        asynchronously and returns an `NVQCRequest`.
+        asynchronously and returns an `nvqc_request`.
 
         Args:
             `cliArgs` (`list[str]`) : A list of command-line arguments
         
         Returns:
-            `NVQCRequest`: 
+            `nvqc_request`: 
         """
         pass
 
 
-client = NVQCClient(
+client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY", "invalid"),
     ngpus=1,  # default to 1
     # These aren't needed but can be overriden
@@ -181,13 +181,13 @@ client = NVQCClient(
 client.setAPIKey("nvapi-...")
 client.setNumGPUs(1)
 
-f1 = NVQCInputFile("/local/path/file.py", remote_path="file.py")
-f2 = NVQCInputFile("another_file.py")
-client.addInputFiles([f1, f2])  # or perhaps addSourceFiles()
-client.addInputFilesFromDir("/path/to/source/dir/with/many/files",
+f1 = nvqc_input_file("/local/path/file.py", remote_path="file.py")
+f2 = nvqc_input_file("another_file.py")
+client.add_input_files([f1, f2])  # or perhaps addSourceFiles()
+client.add_input_files_from_dir("/path/to/source/dir/with/many/files",
                             dst="remote/path/")
 
-f3 = NVQCOutputFile(
+f3 = nvqc_output_file(
     remote_path="data.dat",
     local_path="data.dat")  # local file won't exist until job execution
 client.addOutputFiles(f3)
@@ -200,7 +200,7 @@ reqHandle = client.run("top_file.py")
 jobs = client.get_jobs()  # returns a list of active request handles
 print("Request ID =", reqHandle.requestId)
 result = reqHandle.result()
-result.dumpOutputFiles()  # writes f3
+result.dump_output_files()  # writes f3
 print("Job stddout =", result["stdout"])
 print("Job retcode =", result["retcode"])
 
