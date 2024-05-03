@@ -208,4 +208,3 @@ result = req_handle.result()
 result.dump_output_files()  # writes f3
 print("Job stddout =", result["stdout"])
 print("Job retcode =", result["retcode"])
-
