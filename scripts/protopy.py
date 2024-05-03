@@ -122,7 +122,7 @@ class nvqc_client:
         """
         pass
 
-    def addOutputFile(self, f: nvqc_output_file):
+    def add_output_file(self, f: nvqc_output_file):
         """
         When your NVQC job submission is complete, download a file that your
         program created to your local host.
@@ -133,7 +133,7 @@ class nvqc_client:
         """
         pass
 
-    def addOutputFiles(self, f: list[nvqc_output_file]):
+    def add_output_files(self, f: list[nvqc_output_file]):
         """
         When your NVQC job submission is complete, download a list of files that
         your program created to your local host.
@@ -145,7 +145,7 @@ class nvqc_client:
         """
         pass
 
-    def addCustomEnv(self, envDict: dict):
+    def add_custom_env(self, envDict: dict):
         """
         Add a custom dictionary of environment variables to be set on the remote
         server prior to executing your program on NVQC.
@@ -169,6 +169,7 @@ class nvqc_client:
         pass
 
 
+# Typical workflow for the user
 client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY", "invalid"),
     ngpus=1,  # default to 1
@@ -178,30 +179,33 @@ client = nvqc_client(
 )
 
 # Or
-client.setAPIKey("nvapi-...")
-client.setNumGPUs(1)
+client.set_api_key("nvapi-...")
+client.set_num_gpus(1)
 
+# User loads input files
 f1 = nvqc_input_file("/local/path/file.py", remote_path="file.py")
 f2 = nvqc_input_file("another_file.py")
-client.add_input_files([f1, f2])  # or perhaps addSourceFiles()
+client.add_input_files([f1, f2])  # or perhaps add_source_files()??
 client.add_input_files_from_dir("/path/to/source/dir/with/many/files",
-                            dst="remote/path/")
+                                dst="remote/path/")
 
+# User specifies expected output files and where they can be copied
 f3 = nvqc_output_file(
     remote_path="data.dat",
     local_path="data.dat")  # local file won't exist until job execution
-client.addOutputFiles(f3)
+client.add_output_files(f3)
 
+# User can specify remote environment variables
 customEnv = dict()
 customEnv["CUDAQ_LOG_LEVEL"] = "info"
-client.addCustomEnv(customEnv)
+client.add_custom_env(customEnv)
 
-reqHandle = client.run("top_file.py")
+req_handle = client.run(["top_file.py", "--target", "nvidia-fp64"])
+
 jobs = client.get_jobs()  # returns a list of active request handles
-print("Request ID =", reqHandle.requestId)
-result = reqHandle.result()
+print("Request ID =", req_handle.requestId)
+result = req_handle.result()
 result.dump_output_files()  # writes f3
 print("Job stddout =", result["stdout"])
 print("Job retcode =", result["retcode"])
 
-jobs = client.get_jobs()
