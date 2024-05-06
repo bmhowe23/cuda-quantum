@@ -11,6 +11,7 @@ import requests
 import re
 import hashlib
 import json
+import time
 
 
 class nvqc_input_file:
@@ -27,8 +28,11 @@ class nvqc_input_file:
             `remote_path` (`str`): Remote path to the file once uploaded (optional)
         """
         self.local_path = local_path
-        self.remote_path = remote_path
         self.asset_id = ""
+        if remote_path:
+            self.remote_path = remote_path
+        else:
+            self.remote_path = local_path  # if not provided, use same as local path
 
 
 class nvqc_output_file:
@@ -96,10 +100,10 @@ class nvqc_client:
     """List of outstanding requests (`nvqc_request`)"""
 
     functionID: str
-    """The selected function ID (either overriden by user or selected from ngpus)"""
+    """The selected function ID (either overridden by user or selected from ngpus)"""
 
     versionID: str
-    """The selected function version ID (either overriden by user or selected from ngpus)"""
+    """The selected function version ID (either overridden by user or selected from ngpus)"""
 
     input_assets: list[nvqc_input_file]
     """List of assets needed for this session"""
@@ -109,6 +113,9 @@ class nvqc_client:
 
     verbose: bool
     """Verbose printing"""
+
+    env_dict: dict
+    """Environment variable dictionary"""
 
     def __init__(self,
                  token=None,
@@ -138,6 +145,7 @@ class nvqc_client:
         self.input_assets = list()
         self.in_context = False
         self.verbose = False
+        self.env_dict = dict()
 
         if self.token is None:
             self.token = os.environ.get("NVQC_API_KEY", "invalid")
@@ -183,7 +191,6 @@ class nvqc_client:
         self.allActiveFunctions = list()
         for func in rj["functions"]:
             if func['ncaId'] == self.ncaID and func['status'] == 'ACTIVE':
-                #print(func)
                 self.allActiveFunctions.append(func)
 
     def _selectFunctionAndVersion(self):
@@ -269,6 +276,8 @@ class nvqc_client:
         if not hasattr(self, 'nvqcAssets'):
             self._fetchAssets()
 
+        start = time.perf_counter()
+
         h = self._hashFile(f.local_path)
 
         headers_nvcf = dict()
@@ -308,6 +317,13 @@ class nvqc_client:
 
         # Add to internal tracking list
         self.input_assets.append(f)
+
+        end = time.perf_counter()
+
+        if self.verbose:
+            print(
+                f'_add_input_file({f.local_path} completed in {end-start} seconds.'
+            )
 
     def _deleteAllAssets(self):
         # This function is essentially disabled by default since it deletes all
@@ -397,19 +413,61 @@ class nvqc_client:
         Args:
             `envDict` (`dict`) : A string dictionary of string environment variables
         """
+        for var, val in envDict.items():
+            assert type(var) == str
+            assert type(val) == str
+            self.env_dict[var] = val
         pass
 
-    def run(self, cliArgs: list[str]):
+    def run(self, cli_args: list[str]):
         """
         Run a program on NVIDIA Quantum Cloud. This submits the job
         asynchronously and returns an `nvqc_request`.
 
         Args:
-            `cliArgs` (`list[str]`) : A list of command-line arguments
+            `cli_args` (`list[str]`) : A list of command-line arguments
         
         Returns:
             `nvqc_request`: 
         """
+        req_body = dict()
+        req_body["cli_args"] = cli_args
+        req_body["env_dict"] = self.env_dict
+
+        asset_str = ''
+        asset_str = ','.join(map(lambda x: x.asset_id, self.input_assets))
+        assetFileMap = dict()
+        for a in self.input_assets:
+            assetFileMap[a.asset_id] = a.remote_path
+        req_body["asset_map"] = assetFileMap
+        print(json.dumps(req_body, indent=2))
+
+        data = dict()
+        data['requestBody'] = req_body
+
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        headers['Content-Type'] = 'application/json'
+        headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
+        headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
+
+        r = requests.post(
+            url='https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/' +
+            self.functionID + "/versions/" + self.versionID,
+            data=json.dumps(data),
+            headers=headers)
+        print(r.request.headers)
+        print(r.request.body)
+        #if self.verbose:
+        print('r for function post', r)
+
+        #assert r.status_code == 200 or r.status_code == 202
+        funcResponse = r.json()
+        print(funcResponse)
+
+        # The stateless server will place the files in the appropriate locations
+        # and then run the commands specified in cli_args.
+
         pass
 
     def __enter__(self):
@@ -420,6 +478,7 @@ class nvqc_client:
         # For each input file that was added as an asset, let's delete it
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
+        start = time.perf_counter()
         for f in self.input_assets:
             assetId = f.asset_id
             if len(assetId) > 0:
@@ -428,6 +487,9 @@ class nvqc_client:
                     headers=headers)
             print('Deleting asset', assetId, 'had response', r)
             assert r.status_code == 204
+        end = time.perf_counter()
+        if self.verbose:
+            print(f'Deleting assets took {end-start} seconds.')
         self.input_assets = list()
         self.in_context = False
 
@@ -436,16 +498,19 @@ class nvqc_client:
 client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY"),
     ngpus=1,  # default to 1
-    # These aren't needed but can be overriden
+    # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
     versionID='9b987d02-feec-427b-98cc-5d548c97319a')
 
 with client:
-    client.add_input_file(nvqc_input_file('test.py'))
+    #client.verbose = True
+    #client.add_input_file(nvqc_input_file('test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
-    print(client.nvqcAssets)
+    client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
+    #print(client.nvqcAssets)
+    client.run(['python3', 'test.py'])
 
 exit()
 
