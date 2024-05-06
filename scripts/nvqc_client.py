@@ -7,6 +7,8 @@
 # ============================================================================ #
 
 import os
+import requests
+import re
 
 
 class nvqc_input_file:
@@ -21,7 +23,8 @@ class nvqc_input_file:
             `local_path` (`str`): Local path to a file (required)
             `remote_path` (`str`): Remote path to the file once uploaded (optional)
         """
-        pass
+        self.local_path = local_path
+        self.remote_path = remote_path
 
 
 class nvqc_output_file:
@@ -36,7 +39,8 @@ class nvqc_output_file:
             `remote_path` (`str`): Remote path to the file on NVQC servers (required)
             `local_path` (`str`): Local path to the file once downloaded (optional)
         """
-        pass
+        self.local_path = local_path
+        self.remote_path = remote_path
 
 
 class nvqc_request:
@@ -85,7 +89,18 @@ class nvqc_client:
     requests: list[nvqc_request]
     """List of outstanding requests (`nvqc_request`)"""
 
-    def __init__(self, token=None, ngpus=None, functionID=None, versionID=None):
+    functionID: str
+    """The selected function ID (either overriden by user or selected from ngpus)"""
+
+    versionID: str
+    """The selected function version ID (either overriden by user or selected from ngpus)"""
+
+    def __init__(self,
+                 token=None,
+                 ngpus=None,
+                 functionID=None,
+                 versionID=None,
+                 ncaID=None):
         """
         Constructor
         
@@ -98,9 +113,98 @@ class nvqc_client:
             searching)
             `versionID` (`str`): The NVQC function version ID (defaults to
             automatically searching)
+            `ncaID` (`str`): Override the NVIDIA Client ID (for dev testing)
         """
-        self.ngpus = 1
+        self.token = token
+        self.ngpus = ngpus
+        self.functionID = functionID
+        self.versionID = versionID
+        self.ncaID = ncaID
+
+        # Select the appropriate function
+        if self.token is None:
+            self.token = os.environ.get("NVQC_API_KEY", "invalid")
+        if self.functionID is None:
+            self.functionID = os.environ.get("NVQC_FUNCTION_ID")
+
+        if not self.token.startswith("nvapi-"):
+            raise ValueError(
+                'Invalid NVQC token specified; must start with `nvapi-`')
+
+        if self.ncaID is None:
+            #self.ncaID = 'audj0Ow_82RT0BbiewKaIryIdZWiSrOqiiDSaA8w7a8'
+            self.ncaID = 'mZraB3k06kOd8aPhD6MVXJwBVZ67aXDLsfmDo4MYXDs'
+
+        if self.functionID is None:
+            self._selectFunctionAndVersion()
+
+        if self.versionID is None:
+            # User probably provided a function ID but not a version. Need to
+            # select the version automatically now.
+            self._selectVersion()
+
         pass
+
+    def _fetchActiveFunctions(self):
+        # Fetch a list of functions
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        r = requests.get('https://api.nvcf.nvidia.com/v2/nvcf/functions',
+                         headers=headers)
+        rj = r.json()
+        self.allActiveFunctions = list()
+        for func in rj["functions"]:
+            if func['ncaId'] == self.ncaID and func['status'] == 'ACTIVE':
+                #print(func)
+                self.allActiveFunctions.append(func)
+
+    def _selectFunctionAndVersion(self):
+        if not hasattr(self, 'allActiveFunctions'):
+            self._fetchActiveFunctions()
+
+        # Select the one with the right number of GPUs
+        valid_versions = list()
+        num_gpus_avail = dict()
+        regex_str = "cuda_quantum_v(\d+)_t(\d+)_(\d)x"
+        for func in self.allActiveFunctions:
+            matches = re.search(regex_str, func['name'])
+            if matches:
+                func_ver, func_timeout, func_ngpu = matches.groups()
+                func_ver = int(func_ver)
+                func_timeout = int(func_timeout)
+                func_ngpu = int(func_ngpu)
+                if func_ver == 1 and func_ngpu == self.ngpus:
+                    valid_versions.append(func)
+                    num_gpus_avail[func_ngpu] = 1
+
+        if len(valid_versions) == 0:
+            raise Exception(
+                'No valid functions found matching all criteria during search. Try overriding the function ID if you think it is up.'
+            )
+        sorted_versions = sorted(valid_versions,
+                                 key=lambda x: x['createdAt'],
+                                 reverse=True)
+        self.functionID = sorted_versions[0]["id"]
+        self.versionID = sorted_versions[0]["versionId"]
+        self.selectedFunction = sorted_versions[0]
+        print("Selected function: ", sorted_versions[0])
+
+    def _selectVersion(self):
+        if not hasattr(self, 'allActiveFunctions'):
+            self._fetchActiveFunctions()
+        valid_versions = list()
+        for func in self.allActiveFunctions:
+            if func["id"] == self.functionID:
+                valid_versions.append(func)
+        if len(valid_versions) == 0:
+            raise Exception('No valid function versions found for function ' +
+                            self.functionID)
+        sorted_versions = sorted(valid_versions,
+                                 key=lambda x: x['createdAt'],
+                                 reverse=True)
+        self.versionID = sorted_versions[0]["versionId"]
+        self.selectedFunction = sorted_versions[0]
+        print("Selected function: ", sorted_versions[0])
 
     def add_input_file(self, f: nvqc_input_file):
         """
@@ -171,12 +275,14 @@ class nvqc_client:
 
 # Typical workflow for the user
 client = nvqc_client(
-    token=os.environ.get("NVQC_API_KEY", "invalid"),
+    token=os.environ.get("NVQC_API_KEY"),
     ngpus=1,  # default to 1
     # These aren't needed but can be overriden
-    functionID=os.environ.get("NVQC_FUNCTION_ID", "invalid"),
-    versionID=os.environ.get("NVQC_FUNCTION_VERSION_ID", "invalid"),
+    functionID=os.environ.get("NVQC_FUNCTION_ID"),
+    versionID=os.environ.get("NVQC_FUNCTION_VERSION_ID"),
 )
+
+exit()
 
 # Or
 client.set_api_key("nvapi-...")
