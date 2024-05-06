@@ -9,11 +9,14 @@
 import os
 import requests
 import re
+import hashlib
+import json
 
 
 class nvqc_input_file:
     local_path: str
     remote_path: str
+    asset_id: str
 
     def __init__(self, local_path, remote_path=None):
         """
@@ -25,11 +28,13 @@ class nvqc_input_file:
         """
         self.local_path = local_path
         self.remote_path = remote_path
+        self.asset_id = ""
 
 
 class nvqc_output_file:
     local_path: str
     remote_path: str
+    asset_id: str
 
     def __init__(self, remote_path, local_path=None):
         """
@@ -41,6 +46,7 @@ class nvqc_output_file:
         """
         self.local_path = local_path
         self.remote_path = remote_path
+        self.asset_id = ""
 
 
 class nvqc_request:
@@ -95,6 +101,15 @@ class nvqc_client:
     versionID: str
     """The selected function version ID (either overriden by user or selected from ngpus)"""
 
+    input_assets: list[nvqc_input_file]
+    """List of assets needed for this session"""
+
+    in_context: bool
+    """Whether or not we're in a "with" context right now"""
+
+    verbose: bool
+    """Verbose printing"""
+
     def __init__(self,
                  token=None,
                  ngpus=None,
@@ -120,12 +135,12 @@ class nvqc_client:
         self.functionID = functionID
         self.versionID = versionID
         self.ncaID = ncaID
+        self.input_assets = list()
+        self.in_context = False
+        self.verbose = False
 
-        # Select the appropriate function
         if self.token is None:
             self.token = os.environ.get("NVQC_API_KEY", "invalid")
-        if self.functionID is None:
-            self.functionID = os.environ.get("NVQC_FUNCTION_ID")
 
         if not self.token.startswith("nvapi-"):
             raise ValueError(
@@ -135,6 +150,12 @@ class nvqc_client:
             #self.ncaID = 'audj0Ow_82RT0BbiewKaIryIdZWiSrOqiiDSaA8w7a8'
             self.ncaID = 'mZraB3k06kOd8aPhD6MVXJwBVZ67aXDLsfmDo4MYXDs'
 
+        # Select the appropriate function
+        if self.functionID is None:
+            self.functionID = os.environ.get("NVQC_FUNCTION_ID")
+        if self.versionID is None:
+            self.versionID = os.environ.get("NVQC_FUNCTION_VERSION_ID")
+
         if self.functionID is None:
             self._selectFunctionAndVersion()
 
@@ -142,6 +163,13 @@ class nvqc_client:
             # User probably provided a function ID but not a version. Need to
             # select the version automatically now.
             self._selectVersion()
+
+        if not hasattr(self, 'selectedFunction'):
+            # Note: this was not fetched via API but might be nice to have
+            self.selectedFunction = dict()
+            self.selectedFunction["id"] = self.functionID
+            self.selectedFunction["versionId"] = self.versionID
+        print("Selected function: ", self.selectedFunction)
 
         pass
 
@@ -187,7 +215,6 @@ class nvqc_client:
         self.functionID = sorted_versions[0]["id"]
         self.versionID = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
-        print("Selected function: ", sorted_versions[0])
 
     def _selectVersion(self):
         if not hasattr(self, 'allActiveFunctions'):
@@ -204,17 +231,128 @@ class nvqc_client:
                                  reverse=True)
         self.versionID = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
-        print("Selected function: ", sorted_versions[0])
+
+    def _fetchAssets(self):
+        # Fetch a list of assets visible with this key
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        r = requests.get('https://api.nvcf.nvidia.com/v2/nvcf/assets',
+                         headers=headers)
+        assert r.status_code == 200
+        rj = r.json()
+        if self.verbose:
+            print('_fetchAssets:', rj)
+        self.nvqcAssets = list()
+        for asset in rj["assets"]:
+            self.nvqcAssets.append(asset)
+
+    def _hashFile(self, filename):
+        h = hashlib.sha256()
+        b = bytearray(128 * 1024)
+        mv = memoryview(b)
+        with open(filename, 'rb', buffering=0) as f:
+            while n := f.readinto(mv):
+                h.update(mv[:n])
+        return h.hexdigest()
 
     def add_input_file(self, f: nvqc_input_file):
         """
         Add a local file to the client so that the file can be uploaded when
-        running a main program.
+        running a main program. You must be in a "with" context to call this
+        function.
 
         Args:
             `f` (`nvqc_input_file`): A single file to add to the client
         """
-        pass
+        assert self.in_context
+
+        if not hasattr(self, 'nvqcAssets'):
+            self._fetchAssets()
+
+        h = self._hashFile(f.local_path)
+
+        headers_nvcf = dict()
+        headers_nvcf['Authorization'] = 'Bearer ' + self.token
+        headers_nvcf['Content-Type'] = 'application/json'
+        headers_nvcf["accept"] = "application/json"
+        data_nvcf = dict()
+        data_nvcf["contentType"] = "application/octet-stream"
+        data_nvcf["description"] = "cudaq-nvqc-file-" + h
+        r = requests.post(url='https://api.nvcf.nvidia.com/v2/nvcf/assets',
+                          data=json.dumps(data_nvcf),
+                          headers=headers_nvcf)
+        if self.verbose:
+            print('r for assets post', r)
+        assert (r.status_code == 200)
+        assetResponse = r.json()
+
+        if self.verbose:
+            print('Uploading file...')
+        with open(f.local_path, 'rb') as fh:
+            data_upload = fh.read()
+        headers_upload = dict()
+        headers_upload['Content-Type'] = data_nvcf["contentType"]
+        headers_upload['x-amz-meta-nvcf-asset-description'] = assetResponse[
+            'description']
+        if self.verbose:
+            print('Uploading to', assetResponse['uploadUrl'])
+        r = requests.put(url=assetResponse['uploadUrl'],
+                         data=data_upload,
+                         headers=headers_upload)
+        if self.verbose:
+            print('Done uploading file...', r)
+        assert r.status_code == 200
+
+        # Assign the asset id
+        f.asset_id = assetResponse["assetId"]
+
+        # Add to internal tracking list
+        self.input_assets.append(f)
+
+    def _deleteAllAssets(self):
+        # This function is essentially disabled by default since it deletes all
+        # of the assets owned by the NCA ID.
+        return
+        if not hasattr(self, 'nvqcAssets'):
+            self._fetchAssets()
+
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        for asset in self.nvqcAssets:
+            assetId = asset['assetId']
+            r = requests.delete(
+                url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
+                headers=headers)
+            if self.verbose:
+                print('Deleting asset', assetId, 'had return code', r)
+            assert r.status_code == 204
+
+    def _fetchAssetInfo(self, assetId=None):
+        assetList = list()
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        if assetId is None:
+            # Return information about all the assets
+            if not hasattr(self, 'nvqcAssets'):
+                self._fetchAssets()
+            for asset in self.nvqcAssets:
+                assetId = asset['assetId']
+                r = requests.get(
+                    url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
+                    headers=headers)
+                assert r.status_code == 200
+                if self.verbose:
+                    print('_fetchAssetInfo:', r.json())
+                assetList.append(r.json())
+        else:
+            r = requests.get(url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' +
+                             assetId,
+                             headers=headers)
+            assert r.status_code == 200
+            if self.verbose:
+                print('_fetchAssetInfo:', r.json())
+            assetList.append(r.json())
+        return assetList
 
     def add_input_files(self, f: list[nvqc_input_file]):
         """
@@ -224,7 +362,9 @@ class nvqc_client:
         Args:
             `f` (`list[nvqc_input_file]`): A list of files to add to the client
         """
-        pass
+        # Add each item
+        for it in f:
+            self.add_input_file(f)
 
     def add_output_file(self, f: nvqc_output_file):
         """
@@ -272,15 +412,40 @@ class nvqc_client:
         """
         pass
 
+    def __enter__(self):
+        self.in_context = True
+        pass
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # For each input file that was added as an asset, let's delete it
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        for f in self.input_assets:
+            assetId = f.asset_id
+            if len(assetId) > 0:
+                r = requests.delete(
+                    url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
+                    headers=headers)
+            print('Deleting asset', assetId, 'had response', r)
+            assert r.status_code == 204
+        self.input_assets = list()
+        self.in_context = False
+
 
 # Typical workflow for the user
 client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY"),
     ngpus=1,  # default to 1
     # These aren't needed but can be overriden
-    functionID=os.environ.get("NVQC_FUNCTION_ID"),
-    versionID=os.environ.get("NVQC_FUNCTION_VERSION_ID"),
-)
+    functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
+    versionID='9b987d02-feec-427b-98cc-5d548c97319a')
+
+with client:
+    client.add_input_file(nvqc_input_file('test.py'))
+    #client._fetchAssets()
+    #client._deleteAllAssets()
+    #client._fetchAssetInfo()
+    print(client.nvqcAssets)
 
 exit()
 
