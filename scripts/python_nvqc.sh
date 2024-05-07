@@ -160,7 +160,7 @@ else
     #exit 1
   fi
   if [ -z "$NVQC_FUNCTION_VERSION_ID" ]; then
-    NVQC_FUNCTION_VERSION_ID=9b987d02-feec-427b-98cc-5d548c97319a
+    NVQC_FUNCTION_VERSION_ID=a52c98fd-b84a-4147-a742-918970258041
     #echo "You need to set the NVQC_FUNCTION_VERSION_ID environment variable"
     #exit 1
   fi
@@ -181,6 +181,7 @@ else
   #echo $res | jq -r '.queues[0].queueDepth'
 
   DATA='{ "requestBody": '$DATA' }'
+  echo $DATA
   # -w '%{http_code}'
   # -w '%{time_total}' \
   t0=$(date +%s%3N)

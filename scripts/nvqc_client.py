@@ -118,7 +118,7 @@ class nvqc_client:
     """Environment variable dictionary"""
 
     # Set this to true to do local testing
-    LOCAL_SERVER = True
+    LOCAL_SERVER = False
     LOCAL_URL = "http://localhost:3030"
     NVCF_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
 
@@ -460,19 +460,20 @@ class nvqc_client:
 
         data = dict()
         data['requestBody'] = req_body
-        data['requestHeader'] = {'inputAssetReferences': asset_str}
+        #data['requestHeader'] = {'inputAssetReferences': asset_str}
 
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
         headers['Content-Type'] = 'application/json'
-        headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
-        headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
+        #headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
+        #headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
 
-        url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}',
+        url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
         if self.LOCAL_SERVER:
             url = f'{self.LOCAL_URL}/job'
             data = req_body
 
+        print(json.dumps(data))
         r = requests.post(url=url, data=json.dumps(data), headers=headers)
         print(r.request.headers)
         print(r.request.body)
@@ -520,18 +521,18 @@ client = nvqc_client(
     ngpus=1,  # default to 1
     # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
-    versionID='9b987d02-feec-427b-98cc-5d548c97319a')
+    versionID='a52c98fd-b84a-4147-a742-918970258041')
 
 with client:
     #client.verbose = True
-    client.add_input_file(nvqc_input_file('test.py'))
+    #client.add_input_file(nvqc_input_file('test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
     client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
     #print(client.nvqcAssets)
-    #client.run(['/usr/bin/python3', '-c', 'print("hello")'])
-    client.run(['/usr/bin/python3', 'test.py'])
+    client.run(['/usr/bin/python3', '-c', 'print("hello")'])
+    #client.run(['/usr/bin/python3', 'test.py'])
 
 exit()
 

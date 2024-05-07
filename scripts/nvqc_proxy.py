@@ -100,7 +100,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             if content_length > 0:
                 post_body = self.rfile.read(content_length)
-                #print(post_body)
+                print('BMH', post_body)
                 json_data = json.loads(post_body)
                 #print("Hello world!", post_body)
                 #print(json_data)
@@ -108,6 +108,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 # Run this Linux command to invoke this:
                 # CMD='print("hello from python")'; CMD2=$(echo -n $CMD | base64 --wrap=0); DATA='{"rawPython":"'$CMD2'"}'; curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
                 if "cli_args" in json_data:
+                    print('BMH found cli_args')
                     custom_env = os.environ.copy()
                     if "env_dict" in json_data:
                         envVars = json_data["env_dict"]
