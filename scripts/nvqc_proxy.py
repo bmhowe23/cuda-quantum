@@ -98,10 +98,11 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/job':
             content_length = int(self.headers['Content-Length'])
+            print('BMH content_length is', content_length)
             if content_length > 0:
                 post_body = self.rfile.read(content_length)
-                print('BMH', post_body)
                 json_data = json.loads(post_body)
+                print('BMH json_data', str(json_data))
                 #print("Hello world!", post_body)
                 #print(json_data)
                 # TODO - Have to handle the case where we're supposed to fetch the data from assets instead

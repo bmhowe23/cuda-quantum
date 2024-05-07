@@ -473,8 +473,10 @@ class nvqc_client:
             url = f'{self.LOCAL_URL}/job'
             data = req_body
 
+        data_json = json.dumps(data)
+        headers['Content-Length'] = str(len(data_json))
         print(json.dumps(data))
-        r = requests.post(url=url, data=json.dumps(data), headers=headers)
+        r = requests.post(url=url, data=data_json, headers=headers)
         print(r.request.headers)
         print(r.request.body)
         #if self.verbose:
@@ -521,7 +523,7 @@ client = nvqc_client(
     ngpus=1,  # default to 1
     # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
-    versionID='a52c98fd-b84a-4147-a742-918970258041')
+    versionID='312fc85b-c16a-4fbf-9366-8ce8e62a9764')
 
 with client:
     #client.verbose = True
