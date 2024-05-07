@@ -117,6 +117,11 @@ class nvqc_client:
     env_dict: dict
     """Environment variable dictionary"""
 
+    # Set this to true to do local testing
+    LOCAL_SERVER = False
+    LOCAL_URL = "https://localhost:3031"
+    NVCF_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
+
     def __init__(self,
                  token=None,
                  ngpus=None,
@@ -182,11 +187,13 @@ class nvqc_client:
         pass
 
     def _fetchActiveFunctions(self):
+        if self.LOCAL_SERVER:
+            return
+
         # Fetch a list of functions
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
-        r = requests.get('https://api.nvcf.nvidia.com/v2/nvcf/functions',
-                         headers=headers)
+        r = requests.get(f'{self.NVCF_URL}/functions', headers=headers)
         rj = r.json()
         self.allActiveFunctions = list()
         for func in rj["functions"]:
@@ -194,6 +201,9 @@ class nvqc_client:
                 self.allActiveFunctions.append(func)
 
     def _selectFunctionAndVersion(self):
+        if self.LOCAL_SERVER:
+            return
+
         if not hasattr(self, 'allActiveFunctions'):
             self._fetchActiveFunctions()
 
@@ -224,6 +234,9 @@ class nvqc_client:
         self.selectedFunction = sorted_versions[0]
 
     def _selectVersion(self):
+        if self.LOCAL_SERVER:
+            return
+
         if not hasattr(self, 'allActiveFunctions'):
             self._fetchActiveFunctions()
         valid_versions = list()
@@ -243,8 +256,7 @@ class nvqc_client:
         # Fetch a list of assets visible with this key
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
-        r = requests.get('https://api.nvcf.nvidia.com/v2/nvcf/assets',
-                         headers=headers)
+        r = requests.get(f'{self.NVCF_URL}/assets', headers=headers)
         assert r.status_code == 200
         rj = r.json()
         if self.verbose:
@@ -287,7 +299,7 @@ class nvqc_client:
         data_nvcf = dict()
         data_nvcf["contentType"] = "application/octet-stream"
         data_nvcf["description"] = "cudaq-nvqc-file-" + h
-        r = requests.post(url='https://api.nvcf.nvidia.com/v2/nvcf/assets',
+        r = requests.post(url=f'{self.NVCF_URL}/assets',
                           data=json.dumps(data_nvcf),
                           headers=headers_nvcf)
         if self.verbose:
@@ -336,9 +348,8 @@ class nvqc_client:
         headers['Authorization'] = 'Bearer ' + self.token
         for asset in self.nvqcAssets:
             assetId = asset['assetId']
-            r = requests.delete(
-                url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
-                headers=headers)
+            r = requests.delete(url=f'{self.NVCF_URL}/assets/{assetId}',
+                                headers=headers)
             if self.verbose:
                 print('Deleting asset', assetId, 'had return code', r)
             assert r.status_code == 204
@@ -353,16 +364,14 @@ class nvqc_client:
                 self._fetchAssets()
             for asset in self.nvqcAssets:
                 assetId = asset['assetId']
-                r = requests.get(
-                    url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
-                    headers=headers)
+                r = requests.get(url=f'{self.NVCF_URL}/assets/{assetId}',
+                                 headers=headers)
                 assert r.status_code == 200
                 if self.verbose:
                     print('_fetchAssetInfo:', r.json())
                 assetList.append(r.json())
         else:
-            r = requests.get(url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' +
-                             assetId,
+            r = requests.get(url=f'{self.NVCF_URL}/assets/{assetId}',
                              headers=headers)
             assert r.status_code == 200
             if self.verbose:
@@ -452,8 +461,8 @@ class nvqc_client:
         headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
 
         r = requests.post(
-            url='https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/' +
-            self.functionID + "/versions/" + self.versionID,
+            url=
+            f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}',
             data=json.dumps(data),
             headers=headers)
         print(r.request.headers)
@@ -482,9 +491,8 @@ class nvqc_client:
         for f in self.input_assets:
             assetId = f.asset_id
             if len(assetId) > 0:
-                r = requests.delete(
-                    url='https://api.nvcf.nvidia.com/v2/nvcf/assets/' + assetId,
-                    headers=headers)
+                r = requests.delete(url=f'{self.NVCF_URL}/assets/{assetId}',
+                                    headers=headers)
             print('Deleting asset', assetId, 'had response', r)
             assert r.status_code == 204
         end = time.perf_counter()
