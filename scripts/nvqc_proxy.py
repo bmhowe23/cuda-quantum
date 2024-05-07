@@ -98,7 +98,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/job':
             content_length = int(self.headers['Content-Length'])
-            print('BMH content_length is', content_length)
+            print('BMH content_length is', content_length, flush=True)
             if content_length > 0:
                 post_body = self.rfile.read(content_length)
                 json_data = json.loads(post_body)
