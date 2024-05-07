@@ -460,6 +460,7 @@ class nvqc_client:
 
         data = dict()
         data['requestBody'] = req_body
+        data['requestHeader'] = {'inputAssetReferences': asset_str}
 
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
@@ -467,11 +468,12 @@ class nvqc_client:
         headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
         headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
 
-        r = requests.post(
-            url=
-            f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}',
-            data=json.dumps(data),
-            headers=headers)
+        url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}',
+        if self.LOCAL_SERVER:
+            url = f'{self.LOCAL_URL}/job'
+            data = req_body
+
+        r = requests.post(url=url, data=json.dumps(data), headers=headers)
         print(r.request.headers)
         print(r.request.body)
         #if self.verbose:
@@ -523,13 +525,13 @@ client = nvqc_client(
 with client:
     #client.verbose = True
     client.add_input_file(nvqc_input_file('test.py'))
-    exit()
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
     client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
     #print(client.nvqcAssets)
-    client.run(['python3', 'test.py'])
+    #client.run(['/usr/bin/python3', '-c', 'print("hello")'])
+    client.run(['/usr/bin/python3', 'test.py'])
 
 exit()
 

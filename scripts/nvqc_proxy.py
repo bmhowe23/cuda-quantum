@@ -107,6 +107,57 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 # TODO - Have to handle the case where we're supposed to fetch the data from assets instead
                 # Run this Linux command to invoke this:
                 # CMD='print("hello from python")'; CMD2=$(echo -n $CMD | base64 --wrap=0); DATA='{"rawPython":"'$CMD2'"}'; curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
+                if "cli_args" in json_data:
+                    custom_env = os.environ.copy()
+                    if "env_dict" in json_data:
+                        envVars = json_data["env_dict"]
+                        for var, val in envVars.items():
+                            custom_env[var] = val
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        # Write out the necessary assets if any are specified in
+                        # the asset_map element.
+                        incomingFiles = list()
+                        if "asset_map" in json_data:
+                            files = json_data["asset_map"]
+
+                            for assetId, filename in files.items():
+                                # Create additional temp files and clean them up later
+                                newName = os.path.normpath(tmpdir + "/" +
+                                                           filename)
+                                if not newName.startswith(tmpdir):
+                                    print(
+                                        'Skipping', newName,
+                                        'because it doesn\'t start with the correct prefix'
+                                    )
+                                    continue
+                                if not os.path.exists(newName):
+                                    print('Creating', newName)
+                                    incomingFiles.append(newName)
+                                    os.makedirs(os.path.dirname(newName),
+                                                exist_ok=True)
+                                    if assetId in global_file_dict:
+                                        with open(newName, "wb") as fd:
+                                            fd.write(global_file_dict[assetId])
+                                    else:
+                                        # Setup a symlink to the file
+                                        src_filename = self.headers.get("NVCF-ASSET-DIR") + assetId
+                                        dst_filename = newName
+                                        print(f'Creating a symlink from {src_filename} to {dst_filename}')
+                                        os.symlink(src=src_filename, dst=dst_filename, target_is_directory=False)
+
+
+                        # FIXME - make this asynchronous to handle longer jobs?
+                        result = subprocess.run(json_data["cli_args"],
+                                                capture_output=True,
+                                                cwd=tmpdir,
+                                                env=custom_env,
+                                                text=True)
+
+                        # Cleanup (FIXME - move to finally section)
+                        for file2remove in incomingFiles:
+                            print('Removing', file2remove)
+                            os.remove(file2remove)
+
                 if "rawPython" in json_data:
                     cmd_str_b64 = json_data["rawPython"]
                     #print(cmd_str_b64)
