@@ -19,6 +19,7 @@ import tempfile
 import subprocess
 import os
 import gzip
+import uuid
 
 # This reverse proxy application is needed to span the small gaps when
 # `cudaq-qpud` is shutting down and starting up again. This small reverse proxy
@@ -30,6 +31,10 @@ QPUD_PORT = 3031  # see `docker/build/cudaq.nvqc.Dockerfile`
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
+
+
+# Global dictionary
+global_file_dict = dict()
 
 
 class Server(http.server.SimpleHTTPRequestHandler):
@@ -51,7 +56,46 @@ class Server(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+    def do_DELETE(self):
+        if self.path.startswith("/assets/"):
+            #                    012345678
+            assetId = self.path[8:]
+            print(f"Deleting asset {assetId}")
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+    def do_PUT(self):
+        if self.path.startswith("/upload/"):
+            #                    012345678
+            assetId = self.path[8:]
+            print(f"Uploading asset {assetId}")
+            content_length = int(self.headers['Content-Length'])
+            global_file_dict[assetId] = self.rfile.read(content_length)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
     def do_POST(self):
+        if self.path == '/assets':
+            content_length = int(self.headers['Content-Length'])
+            if content_length > 0:
+                post_body = self.rfile.read(content_length)
+                json_data = json.loads(post_body)
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'application/json')
+                res = dict()
+                res['description'] = json_data['description']
+                res['assetId'] = str(uuid.uuid4())
+                res['uploadUrl'] = f'http://localhost:{str(PROXY_PORT)}/upload/{res["assetId"]}'
+                message = json.dumps(res).encode('utf-8')
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self.wfile.write(message)
+                return
+
         if self.path == '/job':
             content_length = int(self.headers['Content-Length'])
             if content_length > 0:

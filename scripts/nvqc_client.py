@@ -118,8 +118,8 @@ class nvqc_client:
     """Environment variable dictionary"""
 
     # Set this to true to do local testing
-    LOCAL_SERVER = False
-    LOCAL_URL = "https://localhost:3031"
+    LOCAL_SERVER = True
+    LOCAL_URL = "http://localhost:3030"
     NVCF_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
 
     def __init__(self,
@@ -253,6 +253,9 @@ class nvqc_client:
         self.selectedFunction = sorted_versions[0]
 
     def _fetchAssets(self):
+        if self.LOCAL_SERVER:
+            return
+
         # Fetch a list of assets visible with this key
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
@@ -299,7 +302,11 @@ class nvqc_client:
         data_nvcf = dict()
         data_nvcf["contentType"] = "application/octet-stream"
         data_nvcf["description"] = "cudaq-nvqc-file-" + h
-        r = requests.post(url=f'{self.NVCF_URL}/assets',
+        url = f'{self.NVCF_URL}/assets'
+        if self.LOCAL_SERVER:
+            url = f'{self.LOCAL_URL}/assets'
+
+        r = requests.post(url=url,
                           data=json.dumps(data_nvcf),
                           headers=headers_nvcf)
         if self.verbose:
@@ -488,10 +495,13 @@ class nvqc_client:
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
         start = time.perf_counter()
+        base_url = self.NVCF_URL
+        if self.LOCAL_SERVER:
+            base_url = self.LOCAL_URL
         for f in self.input_assets:
             assetId = f.asset_id
             if len(assetId) > 0:
-                r = requests.delete(url=f'{self.NVCF_URL}/assets/{assetId}',
+                r = requests.delete(url=f'{base_url}/assets/{assetId}',
                                     headers=headers)
             print('Deleting asset', assetId, 'had response', r)
             assert r.status_code == 204
@@ -512,7 +522,8 @@ client = nvqc_client(
 
 with client:
     #client.verbose = True
-    #client.add_input_file(nvqc_input_file('test.py'))
+    client.add_input_file(nvqc_input_file('test.py'))
+    exit()
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
