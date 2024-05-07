@@ -140,11 +140,16 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                             fd.write(global_file_dict[assetId])
                                     else:
                                         # Setup a symlink to the file
-                                        src_filename = self.headers.get("NVCF-ASSET-DIR") + assetId
+                                        src_filename = self.headers.get(
+                                            "NVCF-ASSET-DIR",
+                                            "") + '/' + assetId
                                         dst_filename = newName
-                                        print(f'Creating a symlink from {src_filename} to {dst_filename}')
-                                        os.symlink(src=src_filename, dst=dst_filename, target_is_directory=False)
-
+                                        print(
+                                            f'Creating a symlink from {src_filename} to {dst_filename}'
+                                        )
+                                        os.symlink(src=src_filename,
+                                                   dst=dst_filename,
+                                                   target_is_directory=False)
 
                         # FIXME - make this asynchronous to handle longer jobs?
                         result = subprocess.run(json_data["cli_args"],
