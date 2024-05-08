@@ -458,24 +458,17 @@ class nvqc_client:
         req_body["asset_map"] = assetFileMap
         print(json.dumps(req_body, indent=2))
 
-        data = dict()
-        data['requestBody'] = req_body
-        #data['requestHeader'] = {'inputAssetReferences': asset_str}
-
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
         headers['Content-Type'] = 'application/json'
-        #headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
+        headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
         #headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
 
         url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
         if self.LOCAL_SERVER:
             url = f'{self.LOCAL_URL}/job'
-            data = req_body
 
-        data_json = json.dumps(data)
-        headers['Content-Length'] = str(len(data_json))
-        print(json.dumps(data))
+        data_json = json.dumps(req_body)
         r = requests.post(url=url, data=data_json, headers=headers)
         print(r.request.headers)
         print(r.request.body)
@@ -523,18 +516,18 @@ client = nvqc_client(
     ngpus=1,  # default to 1
     # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
-    versionID='312fc85b-c16a-4fbf-9366-8ce8e62a9764')
+    versionID='625b3e31-bcb9-4199-9355-1f77c39a0031')
 
 with client:
     #client.verbose = True
-    #client.add_input_file(nvqc_input_file('test.py'))
+    client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
-    client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
+    #client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
     #print(client.nvqcAssets)
-    client.run(['/usr/bin/python3', '-c', 'print("hello")'])
-    #client.run(['/usr/bin/python3', 'test.py'])
+    #client.run(['/usr/bin/python3', '-c', 'print("hello")'])
+    client.run(['/usr/bin/python3', 'mydir/test.py'])
 
 exit()
 
