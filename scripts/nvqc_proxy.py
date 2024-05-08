@@ -143,6 +143,8 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                         with open(newName, "wb") as fd:
                                             fd.write(global_file_dict[assetId])
                                     else:
+                                        print('NVCF-ASSET-DIR =', self.headers.get("NVCF-ASSET-DIR", ""), flush=True)
+                                        print('NVCF-FUNCTION-ASSET-IDS =', self.headers.get("NVCF-FUNCTION-ASSET-IDS", ""), flush=True)
                                         # Setup a symlink to the file
                                         src_filename = self.headers.get(
                                             "NVCF-ASSET-DIR",
