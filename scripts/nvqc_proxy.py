@@ -118,6 +118,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     with tempfile.TemporaryDirectory() as tmpdir:
                         # Write out the necessary assets if any are specified in
                         # the asset_map element.
+                        print("BMH tmpdir is", tmpdir)
                         incomingFiles = list()
                         if "asset_map" in json_data:
                             files = json_data["asset_map"]
@@ -126,6 +127,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                 # Create additional temp files and clean them up later
                                 newName = os.path.normpath(tmpdir + "/" +
                                                            filename)
+                                print("BMH newName is", newName)
                                 if not newName.startswith(tmpdir):
                                     print(
                                         'Skipping', newName,
@@ -152,6 +154,10 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                         os.symlink(src=src_filename,
                                                    dst=dst_filename,
                                                    target_is_directory=False)
+                                        print("BMH test opening", dst_filename)
+                                        with open(dst_filename, 'rb') as fd:
+                                            pass # Do nothing
+                                        # I think we need a flush here???
 
                         # FIXME - make this asynchronous to handle longer jobs?
                         result = subprocess.run(json_data["cli_args"],
