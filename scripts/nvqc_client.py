@@ -54,11 +54,14 @@ class nvqc_output_file:
 
 
 class nvqc_request:
-    requestId: str
-    result: str
+    request_id: str
+    result_obj: dict
     parent_client: 'nvqc_client'
 
-    def __init__(self, parent_client: 'nvqc_client'):
+    def __init__(self, request_id: str, parent_client: 'nvqc_client'):
+        self.request_id = request_id
+        self.parent_client = parent_client
+        self.result_obj = None
         pass
 
     def result(self):
@@ -66,7 +69,14 @@ class nvqc_request:
         Poll until the job is complete and return the final result as a JSON object
         """
         # Once done, remove it from parent_client
-        pass
+        if self.result_obj:
+            return self.result_obj
+        else:
+            # Poll until complete
+            ret = self.parent_client._fetchStatus(self.request_id, poll_until_complete=True)
+            # Remove from list now that it is complete
+            del self.parent_client.requests[self.request_id]
+            return ret
 
     def status(self):
         """
@@ -75,7 +85,11 @@ class nvqc_request:
         Returns:
             String status of `"waiting"`, `"complete"`, etc. (FIXME)
         """
-        pass
+        ret = self.parent_client._fetchStatus(self.request_id, poll_until_complete=False)
+        if ret:
+            self.result_obj = ret
+            return True
+        return False
 
     def dump_output_files(self):
         """
@@ -96,8 +110,8 @@ class nvqc_client:
     token: str
     """The NVQC API KEY that starts with `nvcf-`."""
 
-    requests: list[nvqc_request]
-    """List of outstanding requests (`nvqc_request`)"""
+    requests: dict
+    """Dictionary of outstanding requests (`nvqc_request`), keyed by request ID"""
 
     functionID: str
     """The selected function ID (either overridden by user or selected from ngpus)"""
@@ -151,6 +165,7 @@ class nvqc_client:
         self.in_context = False
         self.verbose = False
         self.env_dict = dict()
+        self.requests = dict()
 
         if self.token is None:
             self.token = os.environ.get("NVQC_API_KEY", "invalid")
@@ -182,7 +197,9 @@ class nvqc_client:
             self.selectedFunction = dict()
             self.selectedFunction["id"] = self.functionID
             self.selectedFunction["versionId"] = self.versionID
-        print("Selected function: ", self.selectedFunction)
+
+        if self.verbose:
+            print("Selected function: ", self.selectedFunction)
 
         pass
 
@@ -456,13 +473,12 @@ class nvqc_client:
         for a in self.input_assets:
             assetFileMap[a.asset_id] = a.remote_path
         req_body["asset_map"] = assetFileMap
-        print(json.dumps(req_body, indent=2))
 
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
         headers['Content-Type'] = 'application/json'
         headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
-        #headers['NVCF-POLL-SECONDS'] = '5'  # FIXME
+        headers['NVCF-POLL-SECONDS'] = '1'  # FIXME
 
         url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
         if self.LOCAL_SERVER:
@@ -470,19 +486,47 @@ class nvqc_client:
 
         data_json = json.dumps(req_body)
         r = requests.post(url=url, data=data_json, headers=headers)
-        print(r.request.headers)
-        print(r.request.body)
-        #if self.verbose:
-        print('r for function post', r)
-
-        #assert r.status_code == 200 or r.status_code == 202
-        funcResponse = r.json()
-        print(funcResponse)
-
-        # The stateless server will place the files in the appropriate locations
-        # and then run the commands specified in cli_args.
+        request_id = r.headers['NVCF-REQID']
+        request_status = r.headers['NVCF-STATUS']
+        #percent_complete = r.headers['NVCF-PERCENT-COMPLETE']
+        new_req = nvqc_request(request_id, self)
+        self.requests[request_id] = new_req
+        if r.status_code == 200 and request_status == "fulfilled":
+            # All done
+            new_req.result_obj = r.json()
+            del self.requests[request_id]
+            pass
+        elif r.status_code == 202:
+            # Need to poll
+            pass
+        else:
+            # Error
+            print("Unhandled error!")
+            pass
+        return new_req
 
         pass
+
+    def _fetchStatus(self, req_id: str, poll_until_complete: bool = False):
+        headers = dict()
+        headers['Authorization'] = 'Bearer ' + self.token
+        headers['Content-Type'] = 'application/json'
+        headers['NVCF-POLL-SECONDS'] = '1'  # FIXME
+
+        url = f'{self.NVCF_URL}/pexec/status/{req_id}'
+
+        r = requests.get(url=url, headers=headers)
+        request_status = r.headers['NVCF-STATUS']
+
+        if poll_until_complete:
+            while request_status != "fulfilled":
+                r = requests.get(url=url, headers=headers)
+                request_status = r.headers['NVCF-STATUS']
+        
+        if r.status_code == 200:
+            return r.json()
+        else:
+            return None
 
     def __enter__(self):
         self.in_context = True
@@ -520,14 +564,19 @@ client = nvqc_client(
 
 with client:
     #client.verbose = True
-    client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
+    #client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
+    #client.add_input_file(nvqc_input_file(local_path='test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
     #client.add_custom_env({"xxxCUDAQ_LOG_LEVEL": "info"})
     #print(client.nvqcAssets)
     #client.run(['/usr/bin/python3', '-c', 'print("hello")'])
-    client.run(['/usr/bin/python3', 'mydir/test.py'])
+    #client.run(['cat', '/proc/cpuinfo'])
+    #print(client.run(['sleep', '0']).result()['stdout'])
+    print(client.run(['echo', 'hello']).result()['stdout'], end='')
+    #print(client.run(['cat', '/proc/cpuinfo']).result()['stdout'])
+    #client.run(['/usr/bin/python3', 'test.py'])
 
 exit()
 
