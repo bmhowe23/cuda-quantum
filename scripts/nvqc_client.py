@@ -14,6 +14,8 @@ import json
 import time
 import sys
 
+NVQC_CONFIG = os.environ.get("HOME") + "/.nvqc_client.json"
+
 
 class nvqc_input_file:
     local_path: str
@@ -206,11 +208,39 @@ class nvqc_client:
 
         pass
 
-    def _fetchActiveFunctions(self):
+    def _writeActiveFunctionsToFile(self):
+        print("Calling _writeActiveFunctionsToFile")
+        if not hasattr(self, 'allActiveFunctions'):
+            return
+        try:
+            with open(NVQC_CONFIG, 'r') as fp:
+                config = json.load(fp)
+        except Exception as e:
+            config = dict()
+        config['allActiveFunctions'] = self.allActiveFunctions
+        with open(NVQC_CONFIG, 'w') as fp:
+            json.dump(config, fp)
+
+    def _readActiveFunctionsFromFile(self):
+        with open(NVQC_CONFIG, 'r') as fp:
+            config = json.load(fp)
+        self.allActiveFunctions = config['allActiveFunctions']
+
+    def _fetchActiveFunctions(self, from_config_file: bool = True):
         if self.LOCAL_SERVER:
             return
 
-        # Fetch a list of functions
+        if from_config_file:
+            try:
+                self._readActiveFunctionsFromFile()
+                return
+            except Exception as e:
+                # don't return, fetch remotely
+                print(
+                    "Was told to fetch active functions from config file, but errors occurred, so fetching functions remotely"
+                )
+
+        # Fetch a list of functions remotely
         headers = dict()
         headers['Authorization'] = 'Bearer ' + self.token
         r = requests.get(f'{self.NVCF_URL}/functions', headers=headers)
@@ -219,6 +249,7 @@ class nvqc_client:
         for func in rj["functions"]:
             if func['ncaId'] == self.ncaID and func['status'] == 'ACTIVE':
                 self.allActiveFunctions.append(func)
+        self._writeActiveFunctionsToFile()
 
     def _selectFunctionAndVersion(self):
         if self.LOCAL_SERVER:
@@ -271,6 +302,7 @@ class nvqc_client:
                                  reverse=True)
         self.versionID = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
+        print('_selectVersion selected versionID =', self.versionID)
 
     def _fetchAssets(self):
         if self.LOCAL_SERVER:
@@ -494,8 +526,10 @@ class nvqc_client:
             print(
                 'run() returned status code 400. Will re-fetch active functions and try again now.'
             )
-            self._fetchActiveFunctions()
-            self._selectFunctionAndVersion()
+            self._fetchActiveFunctions(from_config_file=False)
+            #self._selectFunctionAndVersion()
+            self._selectVersion() # FIXME - should just call _selectFunctionAndVersion for typical use cases
+            url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
             # Now retry and continue on
             r = requests.post(url=url, data=data_json, headers=headers)
 
@@ -570,13 +604,14 @@ client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY"),
     ngpus=1,  # default to 1
     # These aren't needed but can be overridden
-    functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
-    versionID='2d47a57f-8d13-405d-a8d2-05745d565897')
+    functionID='e53f57ed-6e04-4e42-b491-5c75b2132148')
+    #versionID='xx46c83709-2455-496c-bb96-ca326b9660e9')
+#versionID='2d47a57f-8d13-405d-a8d2-05745d565897')
 
 with client:
     #client.verbose = True
     #client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
-    client.add_input_file(nvqc_input_file(local_path='test.py'))
+    #client.add_input_file(nvqc_input_file(local_path='test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
@@ -586,10 +621,10 @@ with client:
     #client.run(['cat', '/proc/cpuinfo'])
     #print(client.run(['sleep', '0']).result()['stdout'])
     #print(client.run(['echo', 'hello']).result()['stdout'], end='')
-    #print(client.run(sys.argv[1:]).result()['stdout'], end='')
+    print(client.run(sys.argv[1:]).result()['stdout'], end='')
     #print(client.run(['cat', '/proc/cpuinfo']).result()['stdout'])
-    print(client.run(['/usr/bin/python3', 'test.py']).result()['stdout'],
-          end='')
+    #print(client.run(['/usr/bin/python3', 'test.py']).result()['stdout'],
+    #      end='')
 
 exit()
 
