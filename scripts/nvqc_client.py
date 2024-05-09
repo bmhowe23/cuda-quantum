@@ -137,7 +137,8 @@ class nvqc_client:
     """Environment variable dictionary"""
 
     # Set this to true to do local testing
-    LOCAL_SERVER = False
+    LOCAL_SERVER: bool
+
     LOCAL_URL = "http://localhost:3030"
     NVCF_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
 
@@ -146,7 +147,8 @@ class nvqc_client:
                  ngpus=None,
                  functionID=None,
                  versionID=None,
-                 ncaID=None):
+                 ncaID=None,
+                 local_server=False):
         """
         Constructor
         
@@ -160,6 +162,7 @@ class nvqc_client:
             `versionID` (`str`): The NVQC function version ID (defaults to
             automatically searching)
             `ncaID` (`str`): Override the NVIDIA Client ID (for dev testing)
+            `local_server` ('bool`): Set to true for local nvqc_proxy.py testing
         """
         self.token = token
         self.ngpus = ngpus
@@ -171,6 +174,7 @@ class nvqc_client:
         self.verbose = False
         self.env_dict = dict()
         self.requests = dict()
+        self.LOCAL_SERVER = local_server
 
         if self.token is None:
             self.token = os.environ.get("NVQC_API_KEY", "invalid")
@@ -528,7 +532,8 @@ class nvqc_client:
             )
             self._fetchActiveFunctions(from_config_file=False)
             #self._selectFunctionAndVersion()
-            self._selectVersion() # FIXME - should just call _selectFunctionAndVersion for typical use cases
+            self._selectVersion(
+            )  # FIXME - should just call _selectFunctionAndVersion for typical use cases
             url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
             # Now retry and continue on
             r = requests.post(url=url, data=data_json, headers=headers)
@@ -603,10 +608,9 @@ class nvqc_client:
 client = nvqc_client(
     token=os.environ.get("NVQC_API_KEY"),
     ngpus=1,  # default to 1
+    local_server=False,
     # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148')
-    #versionID='xx46c83709-2455-496c-bb96-ca326b9660e9')
-#versionID='2d47a57f-8d13-405d-a8d2-05745d565897')
 
 with client:
     #client.verbose = True

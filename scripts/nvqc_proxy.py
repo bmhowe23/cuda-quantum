@@ -54,6 +54,11 @@ class Server(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"Unhandled exception: {e}")
 
+    def log_message(self, format, *args):
+        # Don't log the health endpoint queries
+        if len(args) > 0 and args[0] != "GET / HTTP/1.1":
+            super().log_message(format, *args)
+
     def do_GET(self):
         # Allow the proxy to automatically handle the health endpoint. The proxy
         # will exit if the application's /job endpoint is down.
@@ -74,6 +79,8 @@ class Server(http.server.SimpleHTTPRequestHandler):
             #                    012345678
             assetId = self.path[8:]
             print(f"Deleting asset {assetId}")
+            if assetId in global_file_dict:
+                del global_file_dict[assetId]
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -83,7 +90,6 @@ class Server(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/upload/"):
             #                    012345678
             assetId = self.path[8:]
-            print(f"Uploading asset {assetId}")
             content_length = int(self.headers['Content-Length'])
             global_file_dict[assetId] = self.rfile.read(content_length)
             self.send_response(HTTPStatus.OK)
@@ -139,6 +145,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                     continue
                                 if not os.path.exists(newName):
                                     incomingFiles.append(newName)
+                                    print('Creating', newName)
                                     os.makedirs(os.path.dirname(newName),
                                                 exist_ok=True)
                                     if assetId in global_file_dict:
