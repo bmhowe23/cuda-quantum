@@ -33,7 +33,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
 
-# Global dictionary
+# Global asset dictionary for local tests (not for NVCF)
 global_file_dict = dict()
 
 
@@ -48,7 +48,8 @@ class Server(http.server.SimpleHTTPRequestHandler):
         try:
             super().handle_one_request()
         except ConnectionResetError as e:
-            print(f"Connection was reset by peer: {e}")
+            #print(f"Connection was reset by peer: {e}")
+            pass
         except Exception as e:
             print(f"Unhandled exception: {e}")
 
@@ -109,18 +110,11 @@ class Server(http.server.SimpleHTTPRequestHandler):
 
         if self.path == '/job':
             content_length = int(self.headers['Content-Length'])
-            print('BMH content_length is', content_length, flush=True)
             if content_length > 0:
                 post_body = self.rfile.read(content_length)
                 json_data = json.loads(post_body)
-                print('BMH json_data', str(json_data))
-                #print("Hello world!", post_body)
-                #print(json_data)
-                # TODO - Have to handle the case where we're supposed to fetch the data from assets instead
-                # Run this Linux command to invoke this:
-                # CMD='print("hello from python")'; CMD2=$(echo -n $CMD | base64 --wrap=0); DATA='{"rawPython":"'$CMD2'"}'; curl --location localhost:3030/job --header "Content-Length: ${#DATA}" --data "${DATA}"
                 if "cli_args" in json_data:
-                    print('BMH found cli_args')
+                    print('Running cli_args job:', json_data)
                     custom_env = os.environ.copy()
                     if "env_dict" in json_data:
                         envVars = json_data["env_dict"]
@@ -129,7 +123,6 @@ class Server(http.server.SimpleHTTPRequestHandler):
                     with tempfile.TemporaryDirectory() as tmpdir:
                         # Write out the necessary assets if any are specified in
                         # the asset_map element.
-                        print("BMH tmpdir is", tmpdir)
                         incomingFiles = list()
                         if "asset_map" in json_data:
                             files = json_data["asset_map"]
@@ -138,32 +131,21 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                 # Create additional temp files and clean them up later
                                 newName = os.path.normpath(tmpdir + "/" +
                                                            filename)
-                                print("BMH newName is", newName)
                                 if not newName.startswith(tmpdir):
                                     print(
-                                        'Skipping', newName,
-                                        'because it doesn\'t start with the correct prefix'
+                                        f'ERROR: Skipping {newName} because it doesn\'t start with the correct prefix'
                                     )
                                     continue
                                 if not os.path.exists(newName):
-                                    print('Creating', newName)
                                     incomingFiles.append(newName)
                                     os.makedirs(os.path.dirname(newName),
                                                 exist_ok=True)
                                     if assetId in global_file_dict:
+                                        # Non-NVCF path - write temp file
                                         with open(newName, "wb") as fd:
                                             fd.write(global_file_dict[assetId])
                                     else:
-                                        print('NVCF-ASSET-DIR =',
-                                              self.headers.get(
-                                                  "NVCF-ASSET-DIR", ""),
-                                              flush=True)
-                                        print('NVCF-FUNCTION-ASSET-IDS =',
-                                              self.headers.get(
-                                                  "NVCF-FUNCTION-ASSET-IDS",
-                                                  ""),
-                                              flush=True)
-                                        # Setup a symlink to the file
+                                        # NVCF path: setup a symlink to the file
                                         src_filename = self.headers.get(
                                             "NVCF-ASSET-DIR",
                                             "") + '/' + assetId
@@ -174,78 +156,12 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                         os.symlink(src=src_filename,
                                                    dst=dst_filename,
                                                    target_is_directory=False)
-                                        print("BMH test opening", dst_filename)
-                                        with open(dst_filename, 'rb') as fd:
-                                            pass  # Do nothing
-                                        # I think we need a flush here???
 
-                        # FIXME - make this asynchronous to handle longer jobs?
                         result = subprocess.run(json_data["cli_args"],
                                                 capture_output=True,
                                                 cwd=tmpdir,
                                                 env=custom_env,
                                                 text=True)
-
-                        # Cleanup (FIXME - move to finally section)
-                        for file2remove in incomingFiles:
-                            print('Removing', file2remove)
-                            os.remove(file2remove)
-
-                if "rawPython" in json_data:
-                    cmd_str_b64 = json_data["rawPython"]
-                    #print(cmd_str_b64)
-                    cmd_str = base64.b64decode(cmd_str_b64)
-                    if json_data["gzip"] > 0:
-                        cmd_str = gzip.decompress(cmd_str)
-                    cmd_str = cmd_str.decode('utf-8')
-
-                    # Add environment variables
-                    custom_env = os.environ.copy()
-                    if "envVars" in json_data:
-                        envVars = json_data["envVars"]
-                        for var, val in envVars.items():
-                            custom_env[var] = val
-                    cliArgs = list()
-                    if "cliArgs" in json_data:
-                        cliArgs = json_data["cliArgs"]
-
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        # Write files for the incoming JSON data
-                        incomingFiles = list()
-                        if "files" in json_data:
-                            files = json_data["files"]
-                            for fileName, fileContents in files.items():
-                                # Create additional temp files and clean them up later
-                                newName = os.path.normpath(tmpdir + "/" +
-                                                           fileName)
-                                if not newName.startswith(tmpdir):
-                                    print(
-                                        'Skipping', newName,
-                                        'because it doesn\'t start with the correct prefix'
-                                    )
-                                    continue
-                                if not os.path.exists(newName):
-                                    print('Creating', newName)
-                                    fileContentsBytes = gzip.decompress(
-                                        base64.b64decode(fileContents))
-                                    incomingFiles.append(newName)
-                                    os.makedirs(os.path.dirname(newName),
-                                                exist_ok=True)
-                                    with open(newName, "wb") as fd:
-                                        fd.write(fileContentsBytes)
-
-                        with tempfile.NamedTemporaryFile(dir=tmpdir) as tmp:
-                            tmp.write(cmd_str.encode('utf-8'))
-                            tmp.flush()
-                            print('Wrote data to', tmp.name)
-                            # Should this be asynchronous?
-                            result = subprocess.run(["/usr/bin/python3"] +
-                                                    [tmp.name] + cliArgs,
-                                                    capture_output=True,
-                                                    cwd=tmpdir,
-                                                    env=custom_env,
-                                                    text=True)
-                            print(result.stdout)
 
                         # Cleanup (FIXME - move to finally section)
                         for file2remove in incomingFiles:
@@ -264,6 +180,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(message)
                 return
+                # End if cli_args
 
             qpud_up = False
             retries = 0

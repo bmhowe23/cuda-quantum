@@ -571,12 +571,12 @@ client = nvqc_client(
     ngpus=1,  # default to 1
     # These aren't needed but can be overridden
     functionID='e53f57ed-6e04-4e42-b491-5c75b2132148',
-    versionID='625b3e31-bcb9-4199-9355-1f77c39a0031')
+    versionID='2d47a57f-8d13-405d-a8d2-05745d565897')
 
 with client:
     #client.verbose = True
     #client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
-    #client.add_input_file(nvqc_input_file(local_path='test.py'))
+    client.add_input_file(nvqc_input_file(local_path='test.py'))
     #client._fetchAssets()
     #client._deleteAllAssets()
     #client._fetchAssetInfo()
@@ -586,9 +586,10 @@ with client:
     #client.run(['cat', '/proc/cpuinfo'])
     #print(client.run(['sleep', '0']).result()['stdout'])
     #print(client.run(['echo', 'hello']).result()['stdout'], end='')
-    print(client.run(sys.argv[1:]).result()['stdout'], end='')
+    #print(client.run(sys.argv[1:]).result()['stdout'], end='')
     #print(client.run(['cat', '/proc/cpuinfo']).result()['stdout'])
-    #client.run(['/usr/bin/python3', 'test.py'])
+    print(client.run(['/usr/bin/python3', 'test.py']).result()['stdout'],
+          end='')
 
 exit()
 
