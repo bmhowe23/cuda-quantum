@@ -42,14 +42,15 @@ class Server(http.server.SimpleHTTPRequestHandler):
     default_request_version = 'HTTP/1.1'
 
     # Override this function because we seem to be getting a lot of
-    # ConnectionResetError exceptions with lots of ugly stack traces in the
-    # logs. Hopefully this will reduce them.
+    # ConnectionResetError exceptions in the health monitoring endpoint,
+    # producing lots of ugly stack traces in the logs. Hopefully this will
+    # reduce them.
     def handle_one_request(self):
         try:
             super().handle_one_request()
         except ConnectionResetError as e:
-            #print(f"Connection was reset by peer: {e}")
-            pass
+            if self.path != '/':
+                print(f"Connection was reset by peer: {e}")
         except Exception as e:
             print(f"Unhandled exception: {e}")
 
