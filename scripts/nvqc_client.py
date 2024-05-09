@@ -332,7 +332,6 @@ class nvqc_client:
                                  reverse=True)
         self.version_id = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
-        print('_selectVersion selected version_id =', self.version_id)
 
     def _fetchAssets(self):
         if self.LOCAL_SERVER:
