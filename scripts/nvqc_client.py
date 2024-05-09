@@ -525,10 +525,10 @@ class nvqc_client:
 
         data_json = json.dumps(req_body)
         r = requests.post(url=url, data=data_json, headers=headers)
-        if r.status_code == 400:
+        if r.status_code == 400 or r.status_code == 404:
             # This function/version does not exist. We probably need to refetch
             print(
-                'run() returned status code 400. Will re-fetch active functions and try again now.'
+                f'run() returned status code {r.status_code}. Will re-fetch active functions and try again now.'
             )
             self._fetchActiveFunctions(from_config_file=False)
             #self._selectFunctionAndVersion()
