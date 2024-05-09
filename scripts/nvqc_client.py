@@ -12,6 +12,7 @@ import re
 import hashlib
 import json
 import time
+import sys
 
 
 class nvqc_input_file:
@@ -73,7 +74,8 @@ class nvqc_request:
             return self.result_obj
         else:
             # Poll until complete
-            ret = self.parent_client._fetchStatus(self.request_id, poll_until_complete=True)
+            ret = self.parent_client._fetchStatus(self.request_id,
+                                                  poll_until_complete=True)
             # Remove from list now that it is complete
             del self.parent_client.requests[self.request_id]
             return ret
@@ -85,7 +87,8 @@ class nvqc_request:
         Returns:
             String status of `"waiting"`, `"complete"`, etc. (FIXME)
         """
-        ret = self.parent_client._fetchStatus(self.request_id, poll_until_complete=False)
+        ret = self.parent_client._fetchStatus(self.request_id,
+                                              poll_until_complete=False)
         if ret:
             self.result_obj = ret
             return True
@@ -486,26 +489,34 @@ class nvqc_client:
 
         data_json = json.dumps(req_body)
         r = requests.post(url=url, data=data_json, headers=headers)
-        request_id = r.headers['NVCF-REQID']
-        request_status = r.headers['NVCF-STATUS']
+        if r.status_code == 400:
+            # This function/version does not exist. We probably need to refetch
+            print(
+                'run() returned status code 400. Will re-fetch active functions and try again now.'
+            )
+            self._fetchActiveFunctions()
+            self._selectFunctionAndVersion()
+            # Now retry and continue on
+            r = requests.post(url=url, data=data_json, headers=headers)
+
+        if r.status_code != 200 and r.status_code != 202:
+            print("Unhandled error:", r)
+            return None
+
+        request_id = r.headers.get('NVCF-REQID', 'invalid-reqid')
+        request_status = r.headers.get('NVCF-STATUS', 'invalid-status')
         #percent_complete = r.headers['NVCF-PERCENT-COMPLETE']
         new_req = nvqc_request(request_id, self)
         self.requests[request_id] = new_req
-        if r.status_code == 200 and request_status == "fulfilled":
+        # LOCAL_SERVER doesn't populate a valid request_status
+        if r.status_code == 200 and (request_status == "fulfilled" or
+                                     self.LOCAL_SERVER):
             # All done
             new_req.result_obj = r.json()
             del self.requests[request_id]
             pass
-        elif r.status_code == 202:
-            # Need to poll
-            pass
-        else:
-            # Error
-            print("Unhandled error!")
-            pass
-        return new_req
 
-        pass
+        return new_req
 
     def _fetchStatus(self, req_id: str, poll_until_complete: bool = False):
         headers = dict()
@@ -522,7 +533,7 @@ class nvqc_client:
             while request_status != "fulfilled":
                 r = requests.get(url=url, headers=headers)
                 request_status = r.headers['NVCF-STATUS']
-        
+
         if r.status_code == 200:
             return r.json()
         else:
@@ -574,7 +585,8 @@ with client:
     #client.run(['/usr/bin/python3', '-c', 'print("hello")'])
     #client.run(['cat', '/proc/cpuinfo'])
     #print(client.run(['sleep', '0']).result()['stdout'])
-    print(client.run(['echo', 'hello']).result()['stdout'], end='')
+    #print(client.run(['echo', 'hello']).result()['stdout'], end='')
+    print(client.run(sys.argv[1:]).result()['stdout'], end='')
     #print(client.run(['cat', '/proc/cpuinfo']).result()['stdout'])
     #client.run(['/usr/bin/python3', 'test.py'])
 

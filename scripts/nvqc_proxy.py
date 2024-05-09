@@ -41,6 +41,17 @@ class Server(http.server.SimpleHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     default_request_version = 'HTTP/1.1'
 
+    # Override this function because we seem to be getting a lot of
+    # ConnectionResetError exceptions with lots of ugly stack traces in the
+    # logs. Hopefully this will reduce them.
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except ConnectionResetError as e:
+            print(f"Connection was reset by peer: {e}")
+        except Exception as e:
+            print(f"Unhandled exception: {e}")
+
     def do_GET(self):
         # Allow the proxy to automatically handle the health endpoint. The proxy
         # will exit if the application's /job endpoint is down.
@@ -143,8 +154,15 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                         with open(newName, "wb") as fd:
                                             fd.write(global_file_dict[assetId])
                                     else:
-                                        print('NVCF-ASSET-DIR =', self.headers.get("NVCF-ASSET-DIR", ""), flush=True)
-                                        print('NVCF-FUNCTION-ASSET-IDS =', self.headers.get("NVCF-FUNCTION-ASSET-IDS", ""), flush=True)
+                                        print('NVCF-ASSET-DIR =',
+                                              self.headers.get(
+                                                  "NVCF-ASSET-DIR", ""),
+                                              flush=True)
+                                        print('NVCF-FUNCTION-ASSET-IDS =',
+                                              self.headers.get(
+                                                  "NVCF-FUNCTION-ASSET-IDS",
+                                                  ""),
+                                              flush=True)
                                         # Setup a symlink to the file
                                         src_filename = self.headers.get(
                                             "NVCF-ASSET-DIR",
@@ -158,7 +176,7 @@ class Server(http.server.SimpleHTTPRequestHandler):
                                                    target_is_directory=False)
                                         print("BMH test opening", dst_filename)
                                         with open(dst_filename, 'rb') as fd:
-                                            pass # Do nothing
+                                            pass  # Do nothing
                                         # I think we need a flush here???
 
                         # FIXME - make this asynchronous to handle longer jobs?
