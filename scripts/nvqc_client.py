@@ -13,8 +13,11 @@ import hashlib
 import json
 import time
 import sys
+import logging
 
 NVQC_CONFIG = os.environ.get("HOME") + "/.nvqc_client.json"
+
+#logging.basicConfig(level=logging.DEBUG)
 
 
 class nvqc_input_file:
@@ -118,10 +121,10 @@ class nvqc_client:
     requests: dict
     """Dictionary of outstanding requests (`nvqc_request`), keyed by request ID"""
 
-    functionID: str
+    function_id: str
     """The selected function ID (either overridden by user or selected from ngpus)"""
 
-    versionID: str
+    version_id: str
     """The selected function version ID (either overridden by user or selected from ngpus)"""
 
     input_assets: list[nvqc_input_file]
@@ -145,8 +148,8 @@ class nvqc_client:
     def __init__(self,
                  token=None,
                  ngpus=None,
-                 functionID=None,
-                 versionID=None,
+                 function_id=None,
+                 version_id=None,
                  ncaID=None,
                  local_server=False):
         """
@@ -157,17 +160,17 @@ class nvqc_client:
             environment variable
             `ngpus` (`int`): The number of GPUs your main program will use (defaults
             to 1)
-            `functionID` (`str`): The NVQC function ID (defaults to automatically
+            `function_id` (`str`): The NVQC function ID (defaults to automatically
             searching)
-            `versionID` (`str`): The NVQC function version ID (defaults to
+            `version_id` (`str`): The NVQC function version ID (defaults to
             automatically searching)
             `ncaID` (`str`): Override the NVIDIA Client ID (for dev testing)
             `local_server` ('bool`): Set to true for local nvqc_proxy.py testing
         """
         self.token = token
         self.ngpus = ngpus
-        self.functionID = functionID
-        self.versionID = versionID
+        self.function_id = function_id
+        self.version_id = version_id
         self.ncaID = ncaID
         self.input_assets = list()
         self.in_context = False
@@ -184,28 +187,51 @@ class nvqc_client:
                 'Invalid NVQC token specified; must start with `nvapi-`')
 
         if self.ncaID is None:
-            #self.ncaID = 'audj0Ow_82RT0BbiewKaIryIdZWiSrOqiiDSaA8w7a8'
-            self.ncaID = 'mZraB3k06kOd8aPhD6MVXJwBVZ67aXDLsfmDo4MYXDs'
+            self.ncaID = os.environ.get("NVQC_NCA_ID")
+            if self.ncaID is None:
+                #self.ncaID = 'audj0Ow_82RT0BbiewKaIryIdZWiSrOqiiDSaA8w7a8'
+                self.ncaID = 'mZraB3k06kOd8aPhD6MVXJwBVZ67aXDLsfmDo4MYXDs'
+
+        self._function_id_specified = function_id != None
+        self._version_id_specified = version_id != None
 
         # Select the appropriate function
-        if self.functionID is None:
-            self.functionID = os.environ.get("NVQC_FUNCTION_ID")
-        if self.versionID is None:
-            self.versionID = os.environ.get("NVQC_FUNCTION_VERSION_ID")
+        if self.function_id is None:
+            self.function_id = os.environ.get("NVQC_FUNCTION_ID")
+            if self.function_id:
+                self._function_id_specified = True
+        if self.version_id is None:
+            self.version_id = os.environ.get("NVQC_FUNCTION_VERSION_ID")
+            if self.version_id:
+                self._version_id_specified = True
 
-        if self.functionID is None:
-            self._selectFunctionAndVersion()
+        if self.function_id is None:
+            # If unsuccessful on the first attempt, the local config file might
+            # be corrupt. Re-fetch and try again.
+            try:
+                self._selectFunctionAndVersion()
+            except Exception as e:
+                self._fetchActiveFunctions(from_config_file=False)
+                self._selectFunctionAndVersion()
+            
 
-        if self.versionID is None:
+        if self.version_id is None:
             # User probably provided a function ID but not a version. Need to
             # select the version automatically now.
-            self._selectVersion()
+            # If unsuccessful on the first attempt, the local config file might
+            # be corrupt. Re-fetch and try again.
+            try:
+                self._selectVersion()
+            except Exception as e:
+                self._fetchActiveFunctions(from_config_file=False)
+                self._selectVersion()
+            
 
         if not hasattr(self, 'selectedFunction'):
             # Note: this was not fetched via API but might be nice to have
             self.selectedFunction = dict()
-            self.selectedFunction["id"] = self.functionID
-            self.selectedFunction["versionId"] = self.versionID
+            self.selectedFunction["id"] = self.function_id
+            self.selectedFunction["versionId"] = self.version_id
 
         if self.verbose:
             print("Selected function: ", self.selectedFunction)
@@ -284,8 +310,8 @@ class nvqc_client:
         sorted_versions = sorted(valid_versions,
                                  key=lambda x: x['createdAt'],
                                  reverse=True)
-        self.functionID = sorted_versions[0]["id"]
-        self.versionID = sorted_versions[0]["versionId"]
+        self.function_id = sorted_versions[0]["id"]
+        self.version_id = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
 
     def _selectVersion(self):
@@ -296,17 +322,17 @@ class nvqc_client:
             self._fetchActiveFunctions()
         valid_versions = list()
         for func in self.allActiveFunctions:
-            if func["id"] == self.functionID:
+            if func["id"] == self.function_id:
                 valid_versions.append(func)
         if len(valid_versions) == 0:
             raise Exception('No valid function versions found for function ' +
-                            self.functionID)
+                            self.function_id)
         sorted_versions = sorted(valid_versions,
                                  key=lambda x: x['createdAt'],
                                  reverse=True)
-        self.versionID = sorted_versions[0]["versionId"]
+        self.version_id = sorted_versions[0]["versionId"]
         self.selectedFunction = sorted_versions[0]
-        print('_selectVersion selected versionID =', self.versionID)
+        print('_selectVersion selected version_id =', self.version_id)
 
     def _fetchAssets(self):
         if self.LOCAL_SERVER:
@@ -519,7 +545,7 @@ class nvqc_client:
         headers['NVCF-INPUT-ASSET-REFERENCES'] = asset_str
         headers['NVCF-POLL-SECONDS'] = '1'  # FIXME
 
-        url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
+        url = f'{self.NVCF_URL}/pexec/functions/{self.function_id}/versions/{self.version_id}'
         if self.LOCAL_SERVER:
             url = f'{self.LOCAL_URL}/job'
 
@@ -527,16 +553,22 @@ class nvqc_client:
         r = requests.post(url=url, data=data_json, headers=headers)
         if r.status_code == 400 or r.status_code == 404:
             # This function/version does not exist. We probably need to refetch
-            print(
-                f'run() returned status code {r.status_code}. Will re-fetch active functions and try again now.'
-            )
-            self._fetchActiveFunctions(from_config_file=False)
-            #self._selectFunctionAndVersion()
-            self._selectVersion(
-            )  # FIXME - should just call _selectFunctionAndVersion for typical use cases
-            url = f'{self.NVCF_URL}/pexec/functions/{self.functionID}/versions/{self.versionID}'
-            # Now retry and continue on
-            r = requests.post(url=url, data=data_json, headers=headers)
+            try_again = False
+            if not (self._function_id_specified) and not (
+                    self._version_id_specified):
+                try_again = True
+                self._fetchActiveFunctions(from_config_file=False)
+                self._selectFunctionAndVersion()
+            elif not (self._version_id_specified):
+                try_again = True
+                self._fetchActiveFunctions(from_config_file=False)
+                self._selectVersion()
+            if try_again:
+                print(f'run() returned status code {r.status_code}. ' +
+                      'Will re-fetch active functions and try again now.')
+                url = f'{self.NVCF_URL}/pexec/functions/{self.function_id}/versions/{self.version_id}'
+                # Now retry and continue on
+                r = requests.post(url=url, data=data_json, headers=headers)
 
         if r.status_code != 200 and r.status_code != 202:
             print("Unhandled error:", r)
@@ -610,7 +642,7 @@ client = nvqc_client(
     ngpus=1,  # default to 1
     local_server=False,
     # These aren't needed but can be overridden
-    functionID='e53f57ed-6e04-4e42-b491-5c75b2132148')
+    function_id='e53f57ed-6e04-4e42-b491-5c75b2132148')
 
 with client:
     #client.verbose = True
