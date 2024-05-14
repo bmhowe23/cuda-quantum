@@ -626,7 +626,8 @@ class nvqc_client:
             if len(assetId) > 0:
                 r = requests.delete(url=f'{base_url}/assets/{assetId}',
                                     headers=headers)
-            print('Deleting asset', assetId, 'had response', r)
+            if self.verbose:
+                print('Deleting asset', assetId, 'had response', r)
             assert r.status_code == 204
         end = time.perf_counter()
         if self.verbose:
@@ -644,6 +645,11 @@ client = nvqc_client(
     function_id='e53f57ed-6e04-4e42-b491-5c75b2132148')
 
 with client:
+    client.add_input_file(nvqc_input_file(local_path='test.py'))
+    res = client.run(['/usr/bin/python3', 'test.py'])
+    print(res.result()['stdout'])
+
+#with client:
     #client.verbose = True
     #client.add_input_file(nvqc_input_file(local_path='test.py',remote_path='mydir/test.py'))
     #client.add_input_file(nvqc_input_file(local_path='test.py'))
@@ -656,7 +662,7 @@ with client:
     #client.run(['cat', '/proc/cpuinfo'])
     #print(client.run(['sleep', '0']).result()['stdout'])
     #print(client.run(['echo', 'hello']).result()['stdout'], end='')
-    print(client.run(sys.argv[1:]).result()['stdout'], end='')
+    #print(client.run(sys.argv[1:]).result()['stdout'], end='')
     #print(client.run(['cat', '/proc/cpuinfo']).result()['stdout'])
     #print(client.run(['/usr/bin/python3', 'test.py']).result()['stdout'],
     #      end='')
