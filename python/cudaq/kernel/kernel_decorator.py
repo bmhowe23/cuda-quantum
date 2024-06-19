@@ -8,7 +8,9 @@
 import ast, sys, traceback
 import importlib
 import inspect
-from typing import Callable
+import json
+import typing
+from typing import Callable, List
 from ..mlir.ir import *
 from ..mlir.passmanager import *
 from ..mlir.dialects import quake, cc
@@ -25,6 +27,30 @@ import numpy as np
 # decorator which hooks us into the JIT compilation infrastructure
 # which maps the AST representation to an MLIR representation and ultimately
 # executable code.
+
+# FIXME - add better error handling because of the eval's here.
+
+
+def eval_annotation(annotation, globals=None, locals=None):
+    if isinstance(annotation, ast.Name):
+        return eval(annotation.id, globals, locals)
+    # elif isinstance(annotation, ast.Attribute):
+    #     value = eval_annotation(annotation.value, globals, locals)
+    #     return getattr(value, annotation.attr)
+    elif isinstance(annotation, ast.Subscript):
+        if str(annotation.value.id) == 'List':
+            return eval(f'list[{annotation.slice.id}]', globals, locals)
+        else:
+            return eval(f'{annotation.value.id}[{annotation.slice.id}]',
+                        globals, locals)
+    # elif isinstance(annotation, ast.Index):
+    #     return eval_annotation(annotation.value, globals, locals)
+    # elif isinstance(annotation, ast.Constant):
+    #     return annotation.value
+    # elif isinstance(annotation, ast.List):
+    #     return [eval_annotation(elt, globals, locals) for elt in annotation.elts]
+    else:
+        raise ValueError(f"Unsupported annotation: {ast.dump(annotation)}")
 
 
 class PyKernelDecorator(object):
@@ -48,9 +74,9 @@ class PyKernelDecorator(object):
                  arguments=None,
                  returnType=None,
                  location=None):
-        restoring_from_pickle = isinstance(function, str)
+        is_deserializing = isinstance(function, str)
 
-        if restoring_from_pickle:
+        if is_deserializing:
             self.kernelFunction = None
             self.name = kernelName
             self.location = location
@@ -81,7 +107,7 @@ class PyKernelDecorator(object):
         # used in the kernel. We need to track these.
         self.dependentCaptures = None
 
-        if self.kernelFunction is None and not restoring_from_pickle:
+        if self.kernelFunction is None and not is_deserializing:
             if self.module is not None:
                 # Could be that we don't have a function
                 # but someone has provided an external Module.
@@ -104,11 +130,8 @@ class PyKernelDecorator(object):
                     "Invalid kernel decorator. Module and function are both None."
                 )
 
-        if restoring_from_pickle:
+        if is_deserializing:
             self.funcSrc = funcSrc
-            self.signature = signature
-            self.arguments = arguments
-            self.returnType = returnType
         else:
             try:
                 # Get the function source
@@ -129,8 +152,7 @@ class PyKernelDecorator(object):
 
         # Assign the signature for use later and
         # keep a list of arguments (used for validation in the runtime)
-        # Bypass if restoring from pickle because they are directly provided.
-        if not restoring_from_pickle:
+        if not is_deserializing:
             self.signature = inspect.getfullargspec(
                 self.kernelFunction).annotations
             self.arguments = [
@@ -138,6 +160,20 @@ class PyKernelDecorator(object):
             ]
             self.returnType = self.signature[
                 'return'] if 'return' in self.signature else None
+        else:
+            # The deserialization processes uses the AST
+            print('BMH GOT HERE 1')
+            func = next(node for node in self.astModule.body
+                        if isinstance(node, ast.FunctionDef))
+            self.arguments = [(arg.arg, eval_annotation(arg.annotation))
+                              for arg in func.args.args]
+            self.signature = dict(self.arguments)
+            if func.returns:
+                self.returnType = eval_annotation(func.returns)
+                self.signature['return'] = self.returnType
+            else:
+                self.returnType = None
+            print('BMH GOT HERE 2')
 
         # Validate that we have a return type annotation if necessary
         hasRetNodeVis = HasReturnNodeVisitor()
@@ -250,11 +286,27 @@ class PyKernelDecorator(object):
                                    name=self.name,
                                    module=self.module)
 
-    def __reduce__(self):
-        args = (self.kernelFunction.__name__ if self.kernelFunction else '',
-                self.verbose, None, self.name, self.funcSrc, self.signature,
-                self.arguments, self.returnType, self.location)
-        return (self.__class__, args)
+    def to_json(self):
+        obj = dict()
+        obj['name'] = self.name
+        obj['location'] = self.location
+        obj['funcSrc'] = self.funcSrc
+        print('signature is', self.signature)
+        print(obj)
+        return json.dumps(obj)
+
+    @staticmethod
+    def from_json(jStr):
+        j = json.loads(jStr)
+        return PyKernelDecorator('kernel',
+                                 verbose=False,
+                                 module=None,
+                                 kernelName=j['name'],
+                                 funcSrc=j['funcSrc'],
+                                 signature=None,
+                                 arguments=None,
+                                 returnType=None,
+                                 location=j['location'])
 
     def __call__(self, *args):
         """

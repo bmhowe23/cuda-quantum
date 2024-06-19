@@ -294,7 +294,14 @@ public:
     std::map<std::string, std::string> headers{
         {"Expect:", ""}, {"Content-type", "application/json"}};
     json requestJson = request;
+    if (requestJson.contains("serializedCodeExecutionContext")) {
+      auto &j =
+          requestJson["serializedCodeExecutionContext"]["scoped_var_dict"];
+      std::string jStr = j;
+      j = json::parse(std::string(jStr));
+    }
     try {
+      cudaq::info("requestJson is {}", requestJson.dump(2));
       cudaq::RestClient restClient;
       auto resultJs =
           restClient.post(m_url, "job", requestJson, headers, false);
