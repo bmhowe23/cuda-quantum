@@ -26,7 +26,8 @@ class ASTNodeVisitor(ast.NodeVisitor):
 
     def visit_Name(self, node):
         # Check for invalid builtin functions
-        if node.id in ('compile', 'dir', 'eval', 'exec', 'memoryview', 'open'):
+        if node.id in ('__import__', 'compile', 'dir', 'eval', 'exec',
+                       'getattr', 'memoryview', 'open'):
             self.valid = False
         self.generic_visit(node)
 
@@ -45,8 +46,18 @@ class ASTNodeVisitor(ast.NodeVisitor):
                          'savez', 'savez_compressed'):
             self.valid = False
         # Check for invalid builtin functions
-        if node.attr in ('compile', 'dir', 'eval', 'exec', 'memoryview',
-                         'open'):
+        if node.attr in ('__import__', 'compile', 'dir', 'eval', 'exec',
+                         'memoryview', 'getattr', 'open'):
+            self.valid = False
+        # pathlib.Path
+        if node.attr in ('read_text'):
+            self.valid = False
+        # Pandas (TODO -there are more)
+        if node.attr in ('read_csv', 'read_excel', 'read_html', 'read_json',
+                         'read_xml'):
+            self.valid = False
+        # mmap.mmap
+        if node.attr in ('mmap'):
             self.valid = False
         self.generic_visit(node)
 
