@@ -27,7 +27,7 @@ class ASTNodeVisitor(ast.NodeVisitor):
     def visit_Name(self, node):
         # Check for invalid builtin functions
         if node.id in ('__import__', 'compile', 'dir', 'eval', 'exec',
-                       'getattr', 'memoryview', 'open'):
+                       'getattr', 'memoryview', 'open', 'vars'):
             self.valid = False
         self.generic_visit(node)
 
@@ -45,19 +45,22 @@ class ASTNodeVisitor(ast.NodeVisitor):
                          'loadtxt', 'memmap', 'open', 'save', 'savetxt',
                          'savez', 'savez_compressed'):
             self.valid = False
-        # Check for invalid builtin functions
+        # Check for invalid builtin functions just for good measure
         if node.attr in ('__import__', 'compile', 'dir', 'eval', 'exec',
-                         'memoryview', 'getattr', 'open'):
+                         'memoryview', 'getattr', 'open', 'vars'):
             self.valid = False
         # pathlib.Path
         if node.attr in ('read_text'):
             self.valid = False
-        # Pandas (TODO -there are more)
+        # Pandas (TODO - there are more)
         if node.attr in ('read_csv', 'read_excel', 'read_html', 'read_json',
                          'read_xml'):
             self.valid = False
         # mmap.mmap
         if node.attr in ('mmap'):
+            self.valid = False
+        # This can be used for __builtins__.__dict__['o'+'p'+'e'+'n']
+        if node.attr in ('__dict__'):
             self.valid = False
         self.generic_visit(node)
 
