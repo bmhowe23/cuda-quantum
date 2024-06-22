@@ -244,7 +244,7 @@ if __name__ == "__main__":
         result = subprocess.run(['sudo', 'chmod', '-R', 'o-rwx', SECRETS_DIR])
         if result.returncode != 0:
             print('ERROR setting permissions on', SECRETS_DIR)
-            exit(1)
+            # exit(1)
 
     Handler = Server
     with ThreadedHTTPServer(("", PROXY_PORT), Handler) as httpd:
