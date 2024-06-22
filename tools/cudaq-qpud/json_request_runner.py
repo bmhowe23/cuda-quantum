@@ -9,8 +9,6 @@
 import cudaq
 import sys
 import json
-import threading
-import os
 import subprocess
 import importlib
 from datetime import datetime
@@ -46,11 +44,6 @@ def get_deserialized_dict(scoped_dict):
 
 if __name__ == "__main__":
     try:
-        watchdog_timeout = int(os.environ.get('WATCHDOG_TIMEOUT_SEC', 0))
-        if watchdog_timeout > 0:
-            timer = threading.Timer(watchdog_timeout, lambda: os._exit(1))
-            timer.start()
-
         # Read request
         if len(sys.argv) < 2:
             raise (Exception('Too few command-line arguments'))
@@ -131,8 +124,6 @@ if __name__ == "__main__":
         # Only rank 0 prints the result
         if not (cudaq.mpi.is_initialized()) or (cudaq.mpi.rank() == 0):
             print('\n' + json.dumps(result))
-        if watchdog_timeout > 0:
-            timer.cancel()  # Must do this before exiting to avoid stall
 
     except Exception as e:
         result = {
@@ -142,5 +133,3 @@ if __name__ == "__main__":
         # Only rank 0 prints the result
         if not (cudaq.mpi.is_initialized()) or (cudaq.mpi.rank() == 0):
             print('\n' + json.dumps(result))
-        if watchdog_timeout > 0:
-            timer.cancel()  # Must do this before exiting to avoid stall

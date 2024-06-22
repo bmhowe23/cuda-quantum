@@ -28,6 +28,31 @@ QPUD_PORT = 3031  # see `docker/build/cudaq.nvqc.Dockerfile`
 
 NUM_GPUS = 0
 MPI_FOUND = False
+WATCHDOG_TIMEOUT_SEC = 0
+RUN_AS_NOBODY = True
+
+
+def build_command_list(temp_file_name: str) -> list[str]:
+    """
+    Build the command essentially from right to left, prepending wrapper
+    commands as necessary for this invocation.
+    """
+    current_script_path = os.path.abspath(__file__)
+    json_req_path = os.path.join(os.path.dirname(current_script_path),
+                                 'json_request_runner.py')
+    cmd_list = [sys.executable, json_req_path, temp_file_name]
+    if NUM_GPUS > 1 and MPI_FOUND:
+        cmd_list = ['mpiexec', '--allow-run-as-root', '-np',
+                    str(NUM_GPUS)] + cmd_list
+    if RUN_AS_NOBODY:
+        cmd_list = [
+            'sudo', 'su', '-s', '/bin/bash', 'nobody', '-c', ' '.join(cmd_list)
+        ]
+
+    if WATCHDOG_TIMEOUT_SEC > 0:
+        cmd_list = ['timeout', str(WATCHDOG_TIMEOUT_SEC)] + cmd_list
+
+    return cmd_list
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -149,26 +174,32 @@ class Server(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(request_data)
 
                 if self.is_serialized_code_execution_request(request_json):
+                    result = {'status': 'uninitialized', 'errorMessage': ''}
                     with tempfile.NamedTemporaryFile(delete=True) as temp_file:
+                        # Make this readable by "nobody"
+                        os.chmod(temp_file.name, 0o644)
                         temp_file.write(request_data)
                         temp_file.flush()
-                        current_script_path = os.path.abspath(__file__)
-                        json_req_path = os.path.join(
-                            os.path.dirname(current_script_path),
-                            'json_request_runner.py')
-                        cmd_list = [
-                            sys.executable, json_req_path, temp_file.name
-                        ]
-                        if NUM_GPUS > 1 and MPI_FOUND:
-                            cmd_list = [
-                                'mpiexec', '--allow-run-as-root', '-np',
-                                str(NUM_GPUS)
-                            ] + cmd_list
+
+                        cmd_list = build_command_list(temp_file.name)
                         cmd_result = subprocess.run(cmd_list,
                                                     capture_output=True,
                                                     text=True)
-                        last_line = cmd_result.stdout.strip().split('\n')[-1]
-                        result = json.loads(last_line)
+                        if cmd_result.returncode == 0:
+                            last_line = cmd_result.stdout.strip().split(
+                                '\n')[-1]
+                            result = json.loads(last_line)
+                        else:
+                            result = {
+                                'status':
+                                    'json_request_runner.py returned an error',
+                                'errorMessage':
+                                    f'Return code: {cmd_result.returncode}\n' +
+                                    f'{cmd_result.stdout}\n' +
+                                    f'{cmd_result.stderr}\n'
+                            }
+                            if RUN_AS_NOBODY:
+                                os.system('pkill -9 -u nobody')
 
                     self.send_response(HTTPStatus.OK)
                     self.send_header('Content-Type', 'application/json')
@@ -204,6 +235,17 @@ if __name__ == "__main__":
     except:
         NUM_GPUS = 0
     MPI_FOUND = (shutil.which('mpiexec') != None)
+    WATCHDOG_TIMEOUT_SEC = int(os.environ.get('WATCHDOG_TIMEOUT_SEC', 0))
+
+    # Lock down permissions
+    SECRETS_DIR = '/run/secrets'
+    if os.path.exists(SECRETS_DIR):
+        print('Performing sudo chmod -R o-rwx', SECRETS_DIR)
+        result = subprocess.run(['sudo', 'chmod', '-R', 'o-rwx', SECRETS_DIR])
+        if result.returncode != 0:
+            print('ERROR setting permissions on', SECRETS_DIR)
+            exit(1)
+
     Handler = Server
     with ThreadedHTTPServer(("", PROXY_PORT), Handler) as httpd:
         print("Serving at port", PROXY_PORT)
