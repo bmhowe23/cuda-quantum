@@ -147,6 +147,40 @@ def test_optimizer():
 
 
 @skipIfPythonLessThan39
+def test_optimizer_exception():
+    hamiltonian = 5.907 - 2.1433 * spin.x(0) * spin.x(1) - 2.1433 * spin.y(
+        0) * spin.y(1) + .21829 * spin.z(0) - 6.125 * spin.z(1)
+
+    @cudaq.kernel
+    def kernel(angles: list[float]):
+        qvector = cudaq.qvector(2)
+        x(qvector[0])
+        ry(angles[0], qvector[1])
+        x.ctrl(qvector[1], qvector[0])
+
+    optimizer = cudaq.optimizers.Adam()
+    gradient = cudaq.gradients.CentralDifference()
+
+    def objective_function(parameter_vector: list[float],
+                           hamiltonian=hamiltonian,
+                           gradient_strategy=gradient,
+                           kernel=kernel) -> tuple[float, list[float]]:
+        # This is invalid
+        with open('file.txt') as fp:
+            pass
+        get_result = lambda parameter_vector: cudaq.observe(
+            kernel, hamiltonian, parameter_vector).expectation()
+        cost = get_result(parameter_vector)
+        gradient_vector = gradient_strategy.compute(parameter_vector,
+                                                    get_result, cost)
+        return cost, gradient_vector
+
+    with pytest.raises(RuntimeError) as error:
+        energy, parameter = optimizer.optimize(dimensions=1,
+                                               function=objective_function)
+
+
+@skipIfPythonLessThan39
 def test_optimizer_nested_kernels():
     hamiltonian = 5.907 - 2.1433 * spin.x(0) * spin.x(1) - 2.1433 * spin.y(
         0) * spin.y(1) + .21829 * spin.z(0) - 6.125 * spin.z(1)

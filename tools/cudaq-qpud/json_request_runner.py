@@ -7,11 +7,48 @@
 # ============================================================================ #
 
 import cudaq
+import ast
 import sys
 import json
 import subprocess
 import importlib
 from datetime import datetime
+
+
+class ASTNodeVisitor(ast.NodeVisitor):
+
+    def __init__(self):
+        self.valid = True
+
+    def visit_ClassDef(self, node):
+        self.valid = False
+        self.generic_visit(node)
+
+    def visit_Name(self, node):
+        # Check for invalid builtin functions
+        if node.id in ('compile', 'dir', 'eval', 'exec', 'memoryview', 'open'):
+            self.valid = False
+        self.generic_visit(node)
+
+    def visit_Import(self, node):
+        self.valid = False
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        self.valid = False
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node):
+        # Check for invalid numpy functions
+        if node.attr in ('fromfile', 'genfromtxt', 'open_mmap', 'load',
+                         'loadtxt', 'memmap', 'open', 'save', 'savetxt',
+                         'savez', 'savez_compressed'):
+            self.valid = False
+        # Check for invalid builtin functions
+        if node.attr in ('compile', 'dir', 'eval', 'exec', 'memoryview',
+                         'open'):
+            self.valid = False
+        self.generic_visit(node)
 
 
 def get_deserialized_dict(scoped_dict):
@@ -73,9 +110,16 @@ if __name__ == "__main__":
         simulator_name = simulator_name.replace('-', '_')
         target_name = sim2target[simulator_name]
 
-        # Validate the full source code
+        # Validate the source_code.
+        # TODO - imports should probably be handled differently.
+        tree = ast.parse(source_code)
+        visitor = ASTNodeVisitor()
+        visitor.visit(tree)
+
+        if not visitor.valid:
+            raise Exception(f'Invalid source code discoverd by ASTNodeVisitor')
+
         full_source = f'{imports_code}\n{source_code}'
-        # TODO: validate
 
         # Execute imports
         exec(imports_code, globals_dict)
