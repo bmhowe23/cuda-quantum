@@ -30,6 +30,7 @@ NUM_GPUS = 0
 MPI_FOUND = False
 WATCHDOG_TIMEOUT_SEC = 0
 RUN_AS_NOBODY = True
+SUDO_FOUND = False
 
 
 def build_command_list(temp_file_name: str) -> list[str]:
@@ -45,9 +46,9 @@ def build_command_list(temp_file_name: str) -> list[str]:
         cmd_list = ['mpiexec', '--allow-run-as-root', '-np',
                     str(NUM_GPUS)] + cmd_list
     if RUN_AS_NOBODY:
-        cmd_list = [
-            'sudo', 'su', '-s', '/bin/bash', 'nobody', '-c', ' '.join(cmd_list)
-        ]
+        cmd_list = ['su', '-s', '/bin/bash', 'nobody', '-c', ' '.join(cmd_list)]
+    if SUDO_FOUND:
+        cmd_list = ['sudo'] + cmd_list
 
     if WATCHDOG_TIMEOUT_SEC > 0:
         cmd_list = ['timeout', str(WATCHDOG_TIMEOUT_SEC)] + cmd_list
@@ -235,9 +236,10 @@ if __name__ == "__main__":
     except:
         NUM_GPUS = 0
     MPI_FOUND = (shutil.which('mpiexec') != None)
+    SUDO_FOUND = (shutil.which('sudo') != None)
     WATCHDOG_TIMEOUT_SEC = int(os.environ.get('WATCHDOG_TIMEOUT_SEC', 0))
 
-    # Lock down permissions
+    # Lock down permissions (FIXME - needs work)
     SECRETS_DIR = '/run/secrets'
     if os.path.exists(SECRETS_DIR):
         print('Performing sudo chmod -R o-rwx', SECRETS_DIR)
