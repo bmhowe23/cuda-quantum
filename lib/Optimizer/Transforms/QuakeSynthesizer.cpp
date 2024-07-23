@@ -630,6 +630,9 @@ public:
         auto structSize = structLayout.first;
         const char *bufferAppendix =
             static_cast<const char *>(args) + structSize + priorCharSpanSize;
+        // FIXME this bufferAppendix calculation isn't right because vecLength
+        // corresponds to the number of items in the vector, not the number of
+        // bytes in the vector.
         for (auto [idx, eleTy, vecLength] : stdVecInfo)
           bufferAppendix += vecLength;
         priorCharSpanSize += (vectorSize + 7) / 8; // 64-bit alignment
