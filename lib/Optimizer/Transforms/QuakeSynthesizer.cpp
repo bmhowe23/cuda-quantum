@@ -122,15 +122,9 @@ synthesizeVectorArgument(OpBuilder &builder, ModuleOp module, unsigned &counter,
                          ATTR arrayAttr, MAKER makeElementValue) {
   auto *ctx = builder.getContext();
   auto argTy = argument.getType();
-  assert(isa<cudaq::cc::StdvecType>(argTy) ||
-         isa<cudaq::cc::CharspanType>(argTy));
-  ELETY eleTy = [&]() -> ELETY {
-    if (auto strTy = dyn_cast<cudaq::cc::StdvecType>(argTy))
-      return cast<ELETY>(strTy.getElementType());
-    // Force cast this to ELETY. This will only happen for CharspanType.
-    return cast<ELETY>(cudaq::opt::factory::getCharType(builder.getContext()));
-  }();
-  auto strTy = cudaq::cc::StdvecType::get(builder.getContext(), eleTy);
+  assert(isa<cudaq::cc::StdvecType>(argTy));
+  auto strTy = cast<cudaq::cc::StdvecType>(argTy);
+  auto eleTy = cast<ELETY>(strTy.getElementType());
   builder.setInsertionPointToStart(argument.getOwner());
   auto argLoc = argument.getLoc();
   auto conArray = builder.create<cudaq::cc::ConstantArrayOp>(
@@ -633,13 +627,12 @@ public:
         auto vectorSize = sizeFromBuffer / bytesInType;
 
         // Skip past all the prior arguments' data in the appendix.
-        // FIXME - what about any prior Pauli words.
         auto structSize = structLayout.first;
         const char *bufferAppendix =
             static_cast<const char *>(args) + structSize + priorCharSpanSize;
         for (auto [idx, eleTy, vecLength] : stdVecInfo)
           bufferAppendix += vecLength;
-        priorCharSpanSize += (vectorSize + 7) / 8; // double word alignment
+        priorCharSpanSize += (vectorSize + 7) / 8; // 64-bit alignment
 
         auto aos = builder.create<cudaq::cc::AllocaOp>(loc, charSpanTy);
         auto pi8Ty = cudaq::cc::PointerType::get(charSpanTy.getElementType());
