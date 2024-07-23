@@ -463,6 +463,7 @@ public:
     auto structLayout = getTargetLayout(funcOp.getFunctionType());
     // Keep track of the stdVec sizes.
     std::vector<std::tuple<std::size_t, Type, std::uint64_t>> stdVecInfo;
+    std::size_t priorCharSpanSize = 0;
 
     for (std::size_t argNum = startingArgIdx, end = arguments.size();
          argNum < end; argNum++) {
@@ -630,9 +631,40 @@ public:
             *reinterpret_cast<const std::uint64_t *>(ptrToSizeInBuffer);
         std::size_t bytesInType = sizeof(char);
         auto vectorSize = sizeFromBuffer / bytesInType;
-        stdVecInfo.emplace_back(
-            argNum, cudaq::opt::factory::getCharType(builder.getContext()),
-            vectorSize);
+
+        // Skip past all the prior arguments' data in the appendix.
+        // FIXME - what about any prior Pauli words.
+        auto structSize = structLayout.first;
+        const char *bufferAppendix =
+            static_cast<const char *>(args) + structSize + priorCharSpanSize;
+        for (auto [idx, eleTy, vecLength] : stdVecInfo)
+          bufferAppendix += vecLength;
+        priorCharSpanSize += (vectorSize + 7) / 8; // double word alignment
+
+        auto aos = builder.create<cudaq::cc::AllocaOp>(loc, charSpanTy);
+        auto pi8Ty = cudaq::cc::PointerType::get(charSpanTy.getElementType());
+        auto ppi8Ty = cudaq::cc::PointerType::get(pi8Ty);
+        auto ptrI64Ty = cudaq::cc::PointerType::get(builder.getI64Type());
+        auto iaTy = cudaq::cc::PointerType::get(
+            cudaq::cc::ArrayType::get(builder.getI64Type()));
+        cudaq::IRBuilder irBuilder(module);
+        std::size_t length = vectorSize;
+        auto strLen = builder.create<arith::ConstantIntOp>(loc, length, 64);
+        StringRef strData{bufferAppendix, length};
+        auto global =
+            irBuilder.genCStringLiteralAppendNul(loc, module, strData);
+        auto addr = builder.create<cudaq::cc::AddressOfOp>(
+            loc, cudaq::cc::PointerType::get(global.getType()),
+            global.getName());
+        auto str = builder.create<cudaq::cc::CastOp>(loc, pi8Ty, addr);
+        auto relocp = builder.create<cudaq::cc::CastOp>(loc, ppi8Ty, aos);
+        builder.create<cudaq::cc::StoreOp>(loc, str, relocp);
+        auto lengthp = builder.create<cudaq::cc::CastOp>(loc, iaTy, aos);
+        auto offsetp = builder.create<cudaq::cc::ComputePtrOp>(
+            loc, ptrI64Ty, lengthp, ArrayRef<cudaq::cc::ComputePtrArg>{1});
+        builder.create<cudaq::cc::StoreOp>(loc, strLen, offsetp);
+        auto spanp = builder.create<cudaq::cc::LoadOp>(loc, aos);
+        argument.replaceAllUsesWith(spanp);
         continue;
       }
 
