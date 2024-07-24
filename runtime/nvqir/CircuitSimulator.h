@@ -33,6 +33,7 @@ struct SummaryData {
   std::size_t targetCount = 0;
   std::size_t svIO = 0;
   std::size_t svFLOPs = 0;
+  std::size_t maxQubits = 0;
   bool enabled = false;
   std::string name;
   SummaryData() {
@@ -43,7 +44,8 @@ struct SummaryData {
   /// @brief Update state-vector-based statistics for a logic gate
   void svGateUpdate(const std::size_t nControls, const std::size_t nTargets,
                     const std::size_t stateDimension,
-                    const std::size_t stateVectorSizeBytes) {
+                    const std::size_t stateVectorSizeBytes,
+                    const std::size_t nQubitsAllocated) {
     assert(nControls <= 63);
     if (enabled) {
       gateCount++;
@@ -58,6 +60,7 @@ struct SummaryData {
       // Each complex multiply is 6 real ops.
       // So 2 complex multiplies and 1 complex addition is 2*6+2 = 14 ops.
       svFLOPs += stateDimension * (14 * nTargets) / (1 << nControls);
+      maxQubits = std::max(maxQubits, nQubitsAllocated);
     }
   }
 
@@ -72,6 +75,7 @@ struct SummaryData {
                  static_cast<double>(svIO) / 1e9);
       cudaq::log("State Vector GFLOPs = {:.6f}",
                  static_cast<double>(svFLOPs) / 1e9);
+      cudaq::log("Max qubits in State Vector simulation = {}", maxQubits);
     }
   }
 };
@@ -749,7 +753,8 @@ protected:
       if (isStateVectorSimulator() && summaryData.enabled)
         summaryData.svGateUpdate(
             next.controls.size(), next.targets.size(), stateDimension,
-            stateDimension * sizeof(std::complex<ScalarType>));
+            stateDimension * sizeof(std::complex<ScalarType>),
+            nQubitsAllocated);
       applyGate(next);
       if (executionContext && executionContext->noiseModel) {
         std::vector<std::size_t> noiseQubits{next.controls.begin(),

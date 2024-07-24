@@ -684,13 +684,13 @@ public:
           // Only X and Y pauli's translate to applied gates
           if (p != cudaq::pauli::Z) {
             // One operation for applying the term
-            summaryData.svGateUpdate(/*nControls=*/0, /*nTargets=*/1,
-                                     stateDimension,
-                                     stateDimension * sizeof(DataType));
+            summaryData.svGateUpdate(
+                /*nControls=*/0, /*nTargets=*/1, stateDimension,
+                stateDimension * sizeof(DataType), nQubitsAllocated);
             // And one operation for un-applying the term
-            summaryData.svGateUpdate(/*nControls=*/0, /*nTargets=*/1,
-                                     stateDimension,
-                                     stateDimension * sizeof(DataType));
+            summaryData.svGateUpdate(
+                /*nControls=*/0, /*nTargets=*/1, stateDimension,
+                stateDimension * sizeof(DataType), nQubitsAllocated);
           }
         }
       });
