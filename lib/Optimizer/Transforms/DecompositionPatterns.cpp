@@ -715,7 +715,9 @@ struct CCZToCX : public OpRewritePattern<quake::ZOp> {
 
   LogicalResult matchAndRewrite(quake::ZOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     Value controls[2];
@@ -731,11 +733,11 @@ struct CCZToCX : public OpRewritePattern<quake::ZOp> {
     if (negatedControls) {
       negC0 = (*negatedControls)[0];
       negC1 = (*negatedControls)[1];
-      // The order of conrols don't matter for the operation. However, this
+      // The order of controls don't matter for the operation. However, this
       // pattern relies on a normalization: if only one control is complemented,
       // it must be the 0th one, which means that a negated 1th control implies
       // a negated 0th. This normalization allow us to decompose more
-      // straifghtforwardly.
+      // straightforwardly.
       if (!negC0 && negC1) {
         negC0 = true;
         negC1 = false;
@@ -743,21 +745,56 @@ struct CCZToCX : public OpRewritePattern<quake::ZOp> {
       }
     }
 
-    rewriter.create<quake::XOp>(loc, controls[1], target);
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/!negC0, target);
-    rewriter.create<quake::XOp>(loc, controls[0], target);
-    rewriter.create<quake::TOp>(loc, target);
-    rewriter.create<quake::XOp>(loc, controls[1], target);
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/!negC1, target);
-    rewriter.create<quake::XOp>(loc, controls[0], target);
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/negC0 && !negC1, target);
+    Operation *newOp = rewriter.create<quake::XOp>(loc, controls[1], target);
+    if (allWires) {
+      controls[1] = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/!negC0, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, controls[0], target);
+    if (allWires) {
+      controls[0] = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, controls[1], target);
+    if (allWires) {
+      controls[1] = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/!negC1, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, controls[0], target);
+    if (allWires) {
+      controls[0] = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/negC0 && !negC1, target);
+    target = allWires ? newOp->getResult(0) : target;
 
-    rewriter.create<quake::XOp>(loc, controls[0], controls[1]);
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/true, controls[1]);
-    rewriter.create<quake::XOp>(loc, controls[0], controls[1]);
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/negC0, controls[1]);
+    newOp = rewriter.create<quake::XOp>(loc, controls[0], controls[1]);
+    if (allWires) {
+      controls[0] = newOp->getResult(0);
+      controls[1] = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/true, controls[1]);
+    controls[1] = allWires ? newOp->getResult(0) : controls[1];
+    newOp = rewriter.create<quake::XOp>(loc, controls[0], controls[1]);
+    if (allWires) {
+      controls[0] = newOp->getResult(0);
+      controls[1] = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/negC0, controls[1]);
+    controls[1] = allWires ? newOp->getResult(0) : controls[1];
 
-    rewriter.create<quake::TOp>(loc, /*isAdj=*/negC1, controls[0]);
+    newOp = rewriter.create<quake::TOp>(loc, /*isAdj=*/negC1, controls[0]);
+    controls[0] = allWires ? newOp->getResult(0) : controls[0];
+    if (allWires) {
+      SmallVector<Value> results{controls[0], controls[1], target};
+      op.getResults().replaceAllUsesWith(results);
+    }
 
     rewriter.eraseOp(op);
     return success();
