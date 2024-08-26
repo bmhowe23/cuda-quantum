@@ -255,7 +255,8 @@ struct SwapToCX : public OpRewritePattern<quake::SwapOp> {
 
   LogicalResult matchAndRewrite(quake::SwapOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -263,9 +264,19 @@ struct SwapToCX : public OpRewritePattern<quake::SwapOp> {
     Value a = op.getTarget(0);
     Value b = op.getTarget(1);
 
-    rewriter.create<quake::XOp>(loc, b, a);
-    rewriter.create<quake::XOp>(loc, a, b);
-    rewriter.create<quake::XOp>(loc, b, a);
+    auto op1 = rewriter.create<quake::XOp>(loc, b, a);
+    if (allWires) {
+      a = op1.getResult(0);
+      b = op1.getResult(1);
+    }
+    auto op2 = rewriter.create<quake::XOp>(loc, a, b);
+    if (allWires) {
+      a = op2.getResult(0);
+      b = op2.getResult(1);
+    }
+    auto op3 = rewriter.create<quake::XOp>(loc, b, a);
+    if (allWires)
+      op.getResults().replaceAllUsesWith(op3);
 
     rewriter.eraseOp(op);
     return success();
