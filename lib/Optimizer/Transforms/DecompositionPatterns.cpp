@@ -1049,7 +1049,9 @@ struct CRxToCX : public OpRewritePattern<quake::RxOp> {
 
   LogicalResult matchAndRewrite(quake::RxOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     Value control;
@@ -1076,14 +1078,30 @@ struct CRxToCX : public OpRewritePattern<quake::RxOp> {
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
     Value negPI_2 = createConstant(loc, -M_PI_2, angleType, rewriter);
 
-    rewriter.create<quake::SOp>(loc, /*isAdj*/ negControl, target);
-    rewriter.create<quake::XOp>(loc, control, target);
-    rewriter.create<quake::RyOp>(loc, negHalfAngle, noControls, target);
-    rewriter.create<quake::XOp>(loc, control, target);
-    rewriter.create<quake::RyOp>(loc, /*isAdj*/ negControl, halfAngle,
-                                 noControls, target);
-    rewriter.create<quake::RzOp>(loc, /*isAdj*/ negControl, negPI_2, noControls,
-                                 target);
+    Operation *newOp =
+        rewriter.create<quake::SOp>(loc, /*isAdj*/ negControl, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::RyOp>(loc, negHalfAngle, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::RyOp>(loc, /*isAdj*/ negControl, halfAngle,
+                                         noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::RzOp>(loc, /*isAdj*/ negControl, negPI_2,
+                                         noControls, target);
+    if (allWires) {
+      target = newOp->getResult(0);
+      op.replaceAllUsesWith(ValueRange{control, target});
+    }
 
     rewriter.eraseOp(op);
     return success();
