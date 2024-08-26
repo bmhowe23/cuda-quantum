@@ -1384,12 +1384,15 @@ struct U3ToRotations : public OpRewritePattern<quake::U3Op> {
 
   LogicalResult matchAndRewrite(quake::U3Op op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
     Location loc = op->getLoc();
     Value target = op.getTarget();
+    SmallVector<Value> controls = op.getControls();
     Value theta = op.getParameters()[0];
     Value phi = op.getParameters()[1];
     Value lam = op.getParameters()[2];
@@ -1405,11 +1408,29 @@ struct U3ToRotations : public OpRewritePattern<quake::U3Op> {
     Value pi_2 = createConstant(loc, M_PI_2, angleType, rewriter);
     Value negPi_2 = rewriter.create<arith::NegFOp>(loc, pi_2);
 
-    rewriter.create<quake::RzOp>(loc, lam, op.getControls(), target);
-    rewriter.create<quake::RxOp>(loc, pi_2, op.getControls(), target);
-    rewriter.create<quake::RzOp>(loc, theta, op.getControls(), target);
-    rewriter.create<quake::RxOp>(loc, negPi_2, op.getControls(), target);
-    rewriter.create<quake::RzOp>(loc, phi, op.getControls(), target);
+    Operation *newOp = rewriter.create<quake::RzOp>(loc, lam, controls, target);
+    if (allWires) {
+      controls = newOp->getResults().drop_back();
+      target = newOp->getResults().back();
+    }
+    newOp = rewriter.create<quake::RxOp>(loc, pi_2, controls, target);
+    if (allWires) {
+      controls = newOp->getResults().drop_back();
+      target = newOp->getResults().back();
+    }
+    newOp = rewriter.create<quake::RzOp>(loc, theta, controls, target);
+    if (allWires) {
+      controls = newOp->getResults().drop_back();
+      target = newOp->getResults().back();
+    }
+    newOp = rewriter.create<quake::RxOp>(loc, negPi_2, controls, target);
+    if (allWires) {
+      controls = newOp->getResults().drop_back();
+      target = newOp->getResults().back();
+    }
+    newOp = rewriter.create<quake::RzOp>(loc, phi, controls, target);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
