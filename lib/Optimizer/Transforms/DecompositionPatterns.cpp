@@ -11,6 +11,7 @@
 #include "cudaq/Optimizer/Dialect/CC/CCOps.h"
 #include "cudaq/Optimizer/Dialect/Quake/QuakeDialect.h"
 #include "cudaq/Optimizer/Dialect/Quake/QuakeOps.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 
@@ -50,18 +51,21 @@ inline bool isAllWires(quake::OperatorInterface op) {
   return true;
 }
 
-/// @brief PatternRewriter wrapper for QuakeOperator's. If the controls and
-/// targets are quake::WireType, then this wrapper class's methods update the
-/// controls and targets in the `create` calls to the corresponding wires in the
-/// output. If they are NOT WireType, then it behaves the exact same as a
-/// regular PatternRewriter.
-class QOpPatternRewriter {
+/// @brief This is a wrapper class for `PatternRewriter::create<>()` and
+/// `OpBuilder::create<>()` for `QuakeOperator`s. If the controls and targets
+/// are `quake::WireType`, then this wrapper class's methods update the controls
+/// and targets in the `create` calls to the corresponding wires in the output.
+/// If they are NOT `WireType`, then the creates behave the exact same as a
+/// regular `PatternRewriter` or `OpBuilder`.
+class QuakeOperatorCreator {
 public:
-  QOpPatternRewriter(PatternRewriter &rewriter_) : rewriter(rewriter_) {}
+  QuakeOperatorCreator(PatternRewriter &rewriter) : rewriter(&rewriter) {}
+  QuakeOperatorCreator(OpBuilder &builder) : builder(&builder) {}
 
   template <typename OpTy>
   OpTy create(Location location, Value &target) {
-    auto op = rewriter.create<OpTy>(location, target);
+    auto op = rewriter ? rewriter->create<OpTy>(location, target)
+                       : builder->create<OpTy>(location, target);
     auto resultWires = op.getWires();
     if (resultWires.size() > 0)
       target = resultWires[0];
@@ -70,7 +74,8 @@ public:
 
   template <typename OpTy>
   OpTy create(Location location, bool is_adj, Value &target) {
-    auto op = rewriter.create<OpTy>(location, is_adj, target);
+    auto op = rewriter ? rewriter->create<OpTy>(location, is_adj, target)
+                       : builder->create<OpTy>(location, is_adj, target);
     auto resultWires = op.getWires();
     if (resultWires.size() > 0)
       target = resultWires[0];
@@ -79,7 +84,8 @@ public:
 
   template <typename OpTy>
   OpTy create(Location location, Value &control, Value &target) {
-    auto op = rewriter.create<OpTy>(location, control, target);
+    auto op = rewriter ? rewriter->create<OpTy>(location, control, target)
+                       : builder->create<OpTy>(location, control, target);
     auto resultWires = op.getWires();
     if (resultWires.size() == 2) {
       control = resultWires[0];
@@ -91,8 +97,10 @@ public:
   template <typename OpTy>
   OpTy create(Location location, bool is_adj, ValueRange parameters,
               SmallVectorImpl<Value> &controls, Value &target) {
-    auto op =
-        rewriter.create<OpTy>(location, is_adj, parameters, controls, target);
+    auto op = rewriter ? rewriter->create<OpTy>(location, is_adj, parameters,
+                                                controls, target)
+                       : builder->create<OpTy>(location, is_adj, parameters,
+                                               controls, target);
     auto resultWires = op.getWires();
     if (resultWires.size() == controls.size() + 1) {
       for (auto &&[c, r] : llvm::zip_equal(controls, resultWires.drop_back()))
@@ -105,7 +113,10 @@ public:
   template <typename OpTy>
   OpTy create(Location location, ValueRange parameters,
               SmallVectorImpl<Value> &controls, Value &target) {
-    auto op = rewriter.create<OpTy>(location, parameters, controls, target);
+    auto op =
+        rewriter
+            ? rewriter->create<OpTy>(location, parameters, controls, target)
+            : builder->create<OpTy>(location, parameters, controls, target);
     auto resultWires = op.getWires();
     if (resultWires.size() == controls.size() + 1) {
       for (auto &&[c, r] : llvm::zip_equal(controls, resultWires.drop_back()))
@@ -118,7 +129,8 @@ public:
   template <typename OpTy>
   OpTy create(Location location, SmallVectorImpl<Value> &controls,
               Value &target) {
-    auto op = rewriter.create<OpTy>(location, controls, target);
+    auto op = rewriter ? rewriter->create<OpTy>(location, controls, target)
+                       : builder->create<OpTy>(location, controls, target);
     auto resultWires = op.getWires();
     if (resultWires.size() == controls.size() + 1) {
       for (auto &&[c, r] : llvm::zip_equal(controls, resultWires.drop_back()))
@@ -130,7 +142,8 @@ public:
 
   template <typename OpTy>
   OpTy create(Location location, SmallVectorImpl<Value> &targets) {
-    auto op = rewriter.create<OpTy>(location, targets);
+    auto op = rewriter ? rewriter->create<OpTy>(location, targets)
+                       : builder->create<OpTy>(location, targets);
     auto resultWires = op.getWires();
     if (resultWires.size() == targets.size())
       for (auto &&[t, r] : llvm::zip_equal(targets, resultWires))
@@ -139,7 +152,8 @@ public:
   }
 
 private:
-  PatternRewriter &rewriter;
+  PatternRewriter *rewriter = nullptr;
+  OpBuilder *builder = nullptr;
 };
 
 /// Check whether the operation has the correct number of controls.
@@ -231,7 +245,7 @@ struct HToPhasedRx : public OpRewritePattern<quake::HOp> {
     Value pi_2 = createConstant(loc, M_PI_2, rewriter.getF64Type(), rewriter);
 
     std::array<Value, 2> parameters = {pi_2, pi_2};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = pi;
     parameters[1] = zero;
@@ -366,7 +380,7 @@ struct SwapToCX : public OpRewritePattern<quake::SwapOp> {
     Value a = op.getTarget(0);
     Value b = op.getTarget(1);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::XOp>(loc, b, a);
     qRewriter.create<quake::XOp>(loc, a, b);
     qRewriter.create<quake::XOp>(loc, b, a);
@@ -406,7 +420,7 @@ struct CHToCX : public OpRewritePattern<quake::HOp> {
     Value control = op.getControls()[0];
     Value target = op.getTarget();
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::SOp>(loc, target);
     qRewriter.create<quake::HOp>(loc, target);
     qRewriter.create<quake::TOp>(loc, target);
@@ -458,7 +472,7 @@ struct SToPhasedRx : public OpRewritePattern<quake::SOp> {
     Value angle = op.isAdj() ? pi_2 : negPi_2;
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = angle;
     parameters[1] = pi_2;
@@ -499,7 +513,7 @@ struct SToR1 : public OpRewritePattern<quake::SOp> {
 
     SmallVector<Value> controls(op.getControls());
     Value target = op.getTarget();
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::R1Op>(loc, angle, controls, target);
 
     if (allWires) {
@@ -548,7 +562,7 @@ struct TToPhasedRx : public OpRewritePattern<quake::TOp> {
     Value negPi_2 = rewriter.create<arith::NegFOp>(loc, pi_2);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = angle;
     parameters[1] = pi_2;
@@ -588,7 +602,7 @@ struct TToR1 : public OpRewritePattern<quake::TOp> {
                                 rewriter.getF64Type(), rewriter);
     SmallVector<Value> controls(op.getControls());
     Value target = op.getTarget();
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::R1Op>(loc, angle, controls, target);
 
     if (allWires) {
@@ -632,7 +646,7 @@ struct CXToCZ : public OpRewritePattern<quake::XOp> {
     if (negatedControls)
       negControl = (*negatedControls)[0];
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::HOp>(loc, target);
     if (negControl)
       qRewriter.create<quake::XOp>(loc, controls);
@@ -674,7 +688,7 @@ struct CCXToCCZ : public OpRewritePattern<quake::XOp> {
     Value target = op.getTarget();
     SmallVector<Value> controls = op.getControls();
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::HOp>(loc, target);
     auto zOp = qRewriter.create<quake::ZOp>(loc, controls, target);
     zOp.setNegatedQubitControls(op.getNegatedQubitControls());
@@ -716,7 +730,7 @@ struct XToPhasedRx : public OpRewritePattern<quake::XOp> {
     Value pi = createConstant(loc, M_PI, rewriter.getF64Type(), rewriter);
 
     SmallVector<Value> parameters = {pi, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     if (allWires)
@@ -758,7 +772,7 @@ struct YToPhasedRx : public OpRewritePattern<quake::YOp> {
         createConstant(loc, -M_PI_2, rewriter.getF64Type(), rewriter);
 
     SmallVector<Value> parameters = {pi, negPi_2};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     if (allWires)
@@ -820,7 +834,7 @@ struct CCZToCX : public OpRewritePattern<quake::ZOp> {
       }
     }
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::XOp>(loc, controls[1], target);
     qRewriter.create<quake::TOp>(loc, /*isAdj=*/!negC0, target);
     qRewriter.create<quake::XOp>(loc, controls[0], target);
@@ -874,7 +888,7 @@ struct CZToCX : public OpRewritePattern<quake::ZOp> {
     if (negatedControls)
       negControl = (*negatedControls)[0];
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::HOp>(loc, target);
     if (negControl)
       qRewriter.create<quake::XOp>(loc, controls);
@@ -923,7 +937,7 @@ struct ZToPhasedRx : public OpRewritePattern<quake::ZOp> {
     Value negPi_2 = rewriter.create<arith::NegFOp>(loc, pi_2);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = negPi;
     parameters[1] = pi_2;
@@ -983,7 +997,7 @@ struct CR1ToCX : public OpRewritePattern<quake::R1Op> {
     Value halfAngle = createDivF(loc, angle, 2.0, rewriter);
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::R1Op>(loc, /*isAdj*/ negControl, halfAngle,
                                   noControls, control);
     qRewriter.create<quake::XOp>(loc, control, target);
@@ -1034,7 +1048,7 @@ struct R1ToPhasedRx : public OpRewritePattern<quake::R1Op> {
     Value negAngle = rewriter.create<arith::NegFOp>(loc, angle);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = negAngle;
     parameters[1] = pi_2;
@@ -1098,7 +1112,7 @@ struct CRxToCX : public OpRewritePattern<quake::RxOp> {
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
     Value negPI_2 = createConstant(loc, -M_PI_2, angleType, rewriter);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::SOp>(loc, /*isAdj*/ negControl, target);
     qRewriter.create<quake::XOp>(loc, control, target);
     qRewriter.create<quake::RyOp>(loc, negHalfAngle, noControls, target);
@@ -1145,7 +1159,7 @@ struct RxToPhasedRx : public OpRewritePattern<quake::RxOp> {
     Value zero = createConstant(loc, 0.0, angleType, rewriter);
 
     SmallVector<Value> parameters = {angle, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     if (allWires)
@@ -1198,7 +1212,7 @@ struct CRyToCX : public OpRewritePattern<quake::RyOp> {
     Value halfAngle = createDivF(loc, angle, 2.0, rewriter);
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::RyOp>(loc, halfAngle, noControls, target);
     qRewriter.create<quake::XOp>(loc, control, target);
     qRewriter.create<quake::RyOp>(loc, /*isAdj*/ negControl, negHalfAngle,
@@ -1242,7 +1256,7 @@ struct RyToPhasedRx : public OpRewritePattern<quake::RyOp> {
     Value pi_2 = createConstant(loc, M_PI_2, angleType, rewriter);
 
     SmallVector<Value> parameters = {angle, pi_2};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     if (allWires)
@@ -1295,7 +1309,7 @@ struct CRzToCX : public OpRewritePattern<quake::RzOp> {
     Value halfAngle = createDivF(loc, angle, 2.0, rewriter);
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::RzOp>(loc, halfAngle, noControls, target);
     qRewriter.create<quake::XOp>(loc, control, target);
     qRewriter.create<quake::RzOp>(loc, /*isAdj*/ negControl, negHalfAngle,
@@ -1344,7 +1358,7 @@ struct RzToPhasedRx : public OpRewritePattern<quake::RzOp> {
     Value negAngle = rewriter.create<arith::NegFOp>(loc, angle);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = negAngle;
     parameters[1] = pi_2;
@@ -1402,7 +1416,7 @@ struct U3ToRotations : public OpRewritePattern<quake::U3Op> {
     Value pi_2 = createConstant(loc, M_PI_2, angleType, rewriter);
     Value negPi_2 = rewriter.create<arith::NegFOp>(loc, pi_2);
 
-    QOpPatternRewriter qRewriter(rewriter);
+    QuakeOperatorCreator qRewriter(rewriter);
     qRewriter.create<quake::RzOp>(loc, lam, controls, target);
     qRewriter.create<quake::RxOp>(loc, pi_2, controls, target);
     qRewriter.create<quake::RzOp>(loc, theta, controls, target);
