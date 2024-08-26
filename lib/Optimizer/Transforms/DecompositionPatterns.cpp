@@ -552,7 +552,7 @@ struct CXToCZ : public OpRewritePattern<quake::XOp> {
     }
     auto op3 = rewriter.create<quake::ZOp>(loc, controls, target);
     if (allWires) {
-      controls = op3.getResults().drop_back(1);
+      controls = op3.getResults().drop_back();
       target = op3.getResults().back();
     }
     if (negControl) {
@@ -584,7 +584,9 @@ struct CCXToCCZ : public OpRewritePattern<quake::XOp> {
 
   LogicalResult matchAndRewrite(quake::XOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
     if (failed(checkNumControls(op, 2)))
       return failure();
@@ -592,11 +594,22 @@ struct CCXToCCZ : public OpRewritePattern<quake::XOp> {
     // Op info
     Location loc = op->getLoc();
     Value target = op.getTarget();
+    SmallVector<Value> controls = op.getControls();
 
-    rewriter.create<quake::HOp>(loc, target);
-    auto zOp = rewriter.create<quake::ZOp>(loc, op.getControls(), target);
-    zOp.setNegatedQubitControls(op.getNegatedQubitControls());
-    rewriter.create<quake::HOp>(loc, target);
+    auto op1 = rewriter.create<quake::HOp>(loc, target);
+    target = allWires ? op1.getResult(0) : target;
+    auto op2 = rewriter.create<quake::ZOp>(loc, controls, target);
+    op2.setNegatedQubitControls(op.getNegatedQubitControls());
+    if (allWires) {
+      controls = op2.getResults().drop_back();
+      target = op2.getResults().back();
+    }
+    auto op3 = rewriter.create<quake::HOp>(loc, target);
+    if (allWires) {
+      SmallVector<Value> results(controls);
+      results.push_back(op3.getResult(0));
+      op.getResults().replaceAllUsesWith(results);
+    }
 
     rewriter.eraseOp(op);
     return success();
