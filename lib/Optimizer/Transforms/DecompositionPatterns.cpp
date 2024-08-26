@@ -1266,7 +1266,9 @@ struct CRzToCX : public OpRewritePattern<quake::RzOp> {
 
   LogicalResult matchAndRewrite(quake::RzOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     Value control;
@@ -1290,11 +1292,20 @@ struct CRzToCX : public OpRewritePattern<quake::RzOp> {
     Value halfAngle = createDivF(loc, angle, 2.0, rewriter);
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
 
-    rewriter.create<quake::RzOp>(loc, halfAngle, noControls, target);
-    rewriter.create<quake::XOp>(loc, control, target);
-    rewriter.create<quake::RzOp>(loc, /*isAdj*/ negControl, negHalfAngle,
-                                 noControls, target);
-    rewriter.create<quake::XOp>(loc, control, target);
+    Operation *newOp =
+        rewriter.create<quake::RzOp>(loc, halfAngle, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::RzOp>(loc, /*isAdj*/ negControl,
+                                         negHalfAngle, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
