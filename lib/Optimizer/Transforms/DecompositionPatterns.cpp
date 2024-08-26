@@ -441,7 +441,8 @@ struct TToPhasedRx : public OpRewritePattern<quake::TOp> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -458,13 +459,20 @@ struct TToPhasedRx : public OpRewritePattern<quake::TOp> {
     Value negPi_2 = rewriter.create<arith::NegFOp>(loc, pi_2);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto op1 =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    target = allWires ? op1.getResult(0) : target;
     parameters[0] = angle;
     parameters[1] = pi_2;
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto op2 =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    target = allWires ? op2.getResult(0) : target;
     parameters[0] = negPi_2;
     parameters[1] = zero;
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto op3 =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (allWires)
+      op.replaceAllUsesWith(op3);
 
     rewriter.eraseOp(op);
     return success();
