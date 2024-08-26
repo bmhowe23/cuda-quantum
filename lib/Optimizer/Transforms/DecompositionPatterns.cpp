@@ -1120,7 +1120,8 @@ struct RxToPhasedRx : public OpRewritePattern<quake::RxOp> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -1136,7 +1137,10 @@ struct RxToPhasedRx : public OpRewritePattern<quake::RxOp> {
     Value zero = createConstant(loc, 0.0, angleType, rewriter);
 
     SmallVector<Value> parameters = {angle, zero};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto newOp =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
