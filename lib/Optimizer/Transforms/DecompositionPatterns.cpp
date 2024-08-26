@@ -586,7 +586,7 @@ struct XToPhasedRx : public OpRewritePattern<quake::XOp> {
     Value zero = createConstant(loc, 0.0, rewriter.getF64Type(), rewriter);
     Value pi = createConstant(loc, M_PI, rewriter.getF64Type(), rewriter);
 
-    ValueRange parameters = {pi, zero};
+    SmallVector<Value> parameters = {pi, zero};
     rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     rewriter.eraseOp(op);
@@ -623,7 +623,7 @@ struct YToPhasedRx : public OpRewritePattern<quake::YOp> {
     Value negPi_2 =
         createConstant(loc, -M_PI_2, rewriter.getF64Type(), rewriter);
 
-    ValueRange parameters = {pi, negPi_2};
+    SmallVector<Value> parameters = {pi, negPi_2};
     rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     rewriter.eraseOp(op);
@@ -970,7 +970,7 @@ struct RxToPhasedRx : public OpRewritePattern<quake::RxOp> {
     ValueRange noControls;
     Value zero = createConstant(loc, 0.0, angleType, rewriter);
 
-    ValueRange parameters = {angle, zero};
+    SmallVector<Value> parameters = {angle, zero};
     rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
 
     rewriter.eraseOp(op);
@@ -1042,7 +1042,8 @@ struct RyToPhasedRx : public OpRewritePattern<quake::RyOp> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -1057,8 +1058,10 @@ struct RyToPhasedRx : public OpRewritePattern<quake::RyOp> {
     ValueRange noControls;
     Value pi_2 = createConstant(loc, M_PI_2, angleType, rewriter);
 
-    ValueRange parameters = {angle, pi_2};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    SmallVector<Value> parameters = {angle, pi_2};
+    auto phRxOp = rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (allWires)
+      op.getResults().replaceAllUsesWith(phRxOp);
 
     rewriter.eraseOp(op);
     return success();
