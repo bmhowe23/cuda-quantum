@@ -114,12 +114,11 @@ struct HToPhasedRx : public OpRewritePattern<quake::HOp> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
-      return failure();
 
     // Op info
     Location loc = op->getLoc();
     Value target = op.getTarget();
+    bool targetIsWire = isa<quake::WireType>(target.getType());
 
     // Necessary/Helpful constants
     ValueRange noControls;
@@ -128,10 +127,16 @@ struct HToPhasedRx : public OpRewritePattern<quake::HOp> {
     Value pi_2 = createConstant(loc, M_PI_2, rewriter.getF64Type(), rewriter);
 
     std::array<Value, 2> parameters = {pi_2, pi_2};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto op1 =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
     parameters[0] = pi;
     parameters[1] = zero;
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (targetIsWire)
+      target = op1.getResult(0);
+    auto op2 =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (targetIsWire)
+      op.getResult(0).replaceAllUsesWith(op2.getResult(0));
 
     rewriter.eraseOp(op);
     return success();
