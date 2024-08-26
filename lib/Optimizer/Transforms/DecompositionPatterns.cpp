@@ -924,7 +924,9 @@ struct CR1ToCX : public OpRewritePattern<quake::R1Op> {
 
   LogicalResult matchAndRewrite(quake::R1Op op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     Value control;
@@ -948,13 +950,26 @@ struct CR1ToCX : public OpRewritePattern<quake::R1Op> {
     Value halfAngle = createDivF(loc, angle, 2.0, rewriter);
     Value negHalfAngle = rewriter.create<arith::NegFOp>(loc, halfAngle);
 
-    rewriter.create<quake::R1Op>(loc, /*isAdj*/ negControl, halfAngle,
-                                 noControls, control);
-    rewriter.create<quake::XOp>(loc, control, target);
-    rewriter.create<quake::R1Op>(loc, /*isAdj*/ negControl, negHalfAngle,
-                                 noControls, target);
-    rewriter.create<quake::XOp>(loc, control, target);
-    rewriter.create<quake::R1Op>(loc, halfAngle, noControls, target);
+    Operation *newOp = rewriter.create<quake::R1Op>(
+        loc, /*isAdj*/ negControl, halfAngle, noControls, control);
+    control = allWires ? newOp->getResult(0) : control;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::R1Op>(loc, /*isAdj*/ negControl,
+                                         negHalfAngle, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    newOp = rewriter.create<quake::R1Op>(loc, halfAngle, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
+    if (allWires)
+      op.replaceAllUsesWith(ValueRange{control, target});
 
     rewriter.eraseOp(op);
     return success();
