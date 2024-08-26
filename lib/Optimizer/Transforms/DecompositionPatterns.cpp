@@ -405,14 +405,19 @@ struct SToR1 : public OpRewritePattern<quake::SOp> {
 
   LogicalResult matchAndRewrite(quake::SOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
     auto loc = op->getLoc();
     auto angle = createConstant(loc, op.isAdj() ? -M_PI_2 : M_PI_2,
                                 rewriter.getF64Type(), rewriter);
-    rewriter.create<quake::R1Op>(loc, angle, op.getControls(), op.getTarget());
+    auto op1 = rewriter.create<quake::R1Op>(loc, angle, op.getControls(),
+                                            op.getTarget());
+    if (allWires)
+      op.replaceAllUsesWith(op1);
     rewriter.eraseOp(op);
     return success();
   }
