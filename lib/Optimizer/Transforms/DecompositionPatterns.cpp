@@ -644,7 +644,8 @@ struct XToPhasedRx : public OpRewritePattern<quake::XOp> {
     SmallVector<Value> parameters = {pi, zero};
     auto newOp =
         rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
-    op.replaceAllUsesWith(newOp);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
@@ -667,7 +668,8 @@ struct YToPhasedRx : public OpRewritePattern<quake::YOp> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -681,7 +683,10 @@ struct YToPhasedRx : public OpRewritePattern<quake::YOp> {
         createConstant(loc, -M_PI_2, rewriter.getF64Type(), rewriter);
 
     SmallVector<Value> parameters = {pi, negPi_2};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    auto newOp =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
