@@ -813,7 +813,9 @@ struct CZToCX : public OpRewritePattern<quake::ZOp> {
 
   LogicalResult matchAndRewrite(quake::ZOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
     if (failed(checkNumControls(op, 1)))
       return failure();
@@ -821,18 +823,33 @@ struct CZToCX : public OpRewritePattern<quake::ZOp> {
     // Op info
     Location loc = op->getLoc();
     Value target = op.getTarget();
+    Value control = op.getControls()[0];
     auto negControl = false;
     auto negatedControls = op.getNegatedQubitControls();
     if (negatedControls)
       negControl = (*negatedControls)[0];
 
-    rewriter.create<quake::HOp>(loc, target);
-    if (negControl)
-      rewriter.create<quake::XOp>(loc, op.getControls());
-    rewriter.create<quake::XOp>(loc, op.getControls(), target);
-    if (negControl)
-      rewriter.create<quake::XOp>(loc, op.getControls());
-    rewriter.create<quake::HOp>(loc, target);
+    Operation *newOp = rewriter.create<quake::HOp>(loc, target);
+    if (allWires)
+      target = newOp->getResult(0);
+    if (negControl) {
+      newOp = rewriter.create<quake::XOp>(loc, control);
+      if (allWires)
+        control = newOp->getResult(0);
+    }
+    newOp = rewriter.create<quake::XOp>(loc, control, target);
+    if (allWires) {
+      control = newOp->getResult(0);
+      target = newOp->getResult(1);
+    }
+    if (negControl) {
+      newOp = rewriter.create<quake::XOp>(loc, control);
+      if (allWires)
+        control = newOp->getResult(0);
+    }
+    newOp = rewriter.create<quake::HOp>(loc, target);
+    if (allWires)
+      op.replaceAllUsesWith(ValueRange{control, newOp->getResult(0)});
 
     rewriter.eraseOp(op);
     return success();
