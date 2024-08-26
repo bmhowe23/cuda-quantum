@@ -485,7 +485,9 @@ struct CXToCZ : public OpRewritePattern<quake::XOp> {
 
   LogicalResult matchAndRewrite(quake::XOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() ==
+                          op.getControls().size() + op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
     if (failed(checkNumControls(op, 1)))
       return failure();
@@ -493,18 +495,36 @@ struct CXToCZ : public OpRewritePattern<quake::XOp> {
     // Op info
     Location loc = op->getLoc();
     Value target = op.getTarget();
+    SmallVector<Value> controls = op.getControls();
     auto negControl = false;
     auto negatedControls = op.getNegatedQubitControls();
     if (negatedControls)
       negControl = (*negatedControls)[0];
 
-    rewriter.create<quake::HOp>(loc, target);
-    if (negControl)
-      rewriter.create<quake::XOp>(loc, op.getControls());
-    rewriter.create<quake::ZOp>(loc, op.getControls(), target);
-    if (negControl)
-      rewriter.create<quake::XOp>(loc, op.getControls());
-    rewriter.create<quake::HOp>(loc, target);
+    auto op1 = rewriter.create<quake::HOp>(loc, target);
+    if (allWires)
+      target = op1.getResult(0);
+    if (negControl) {
+      auto op2 = rewriter.create<quake::XOp>(loc, controls);
+      if (allWires)
+        controls = op2.getResults();
+    }
+    auto op3 = rewriter.create<quake::ZOp>(loc, controls, target);
+    if (allWires) {
+      controls = op3.getResults().drop_back(1);
+      target = op3.getResults().back();
+    }
+    if (negControl) {
+      auto op4 = rewriter.create<quake::XOp>(loc, controls);
+      if (allWires)
+        controls = op4.getResults();
+    }
+    auto op5 = rewriter.create<quake::HOp>(loc, target);
+    if (allWires) {
+      SmallVector<Value> wires(controls);
+      wires.push_back(op5.getResult(0));
+      op.getResults().replaceAllUsesWith(wires);
+    }
 
     rewriter.eraseOp(op);
     return success();
