@@ -990,7 +990,8 @@ struct R1ToPhasedRx : public OpRewritePattern<quake::R1Op> {
                                 PatternRewriter &rewriter) const override {
     if (!op.getControls().empty())
       return failure();
-    if (!quake::isAllReferences(op))
+    const bool allWires = op.getWires().size() == op.getTargets().size();
+    if (!quake::isAllReferences(op) && !allWires)
       return failure();
 
     // Op info
@@ -1009,13 +1010,20 @@ struct R1ToPhasedRx : public OpRewritePattern<quake::R1Op> {
     Value negAngle = rewriter.create<arith::NegFOp>(loc, angle);
 
     std::array<Value, 2> parameters = {pi_2, zero};
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    Operation *newOp =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
     parameters[0] = negAngle;
     parameters[1] = pi_2;
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    newOp =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    target = allWires ? newOp->getResult(0) : target;
     parameters[0] = negPi_2;
     parameters[1] = zero;
-    rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    newOp =
+        rewriter.create<quake::PhasedRxOp>(loc, parameters, noControls, target);
+    if (allWires)
+      op.replaceAllUsesWith(newOp);
 
     rewriter.eraseOp(op);
     return success();
