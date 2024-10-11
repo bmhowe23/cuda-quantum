@@ -119,6 +119,29 @@ CUDAQ_TEST(NVQIRTester, checkSimple) {
   __quantum__rt__finalize();
 }
 
+CUDAQ_TEST(NVQIRTester, checkSimple2) {
+  __quantum__rt__initialize(0, nullptr);
+  auto qubits = __quantum__rt__qubit_allocate_array(3);
+  Qubit *q1 = *reinterpret_cast<Qubit **>(
+      __quantum__rt__array_get_element_ptr_1d(qubits, 0));
+  Qubit *q2 = *reinterpret_cast<Qubit **>(
+      __quantum__rt__array_get_element_ptr_1d(qubits, 1));
+  Qubit *q3 = *reinterpret_cast<Qubit **>(
+      __quantum__rt__array_get_element_ptr_1d(qubits, 2));
+
+  __quantum__qis__x(q3);
+  __quantum__qis__h(q1);
+  __quantum__qis__cnot(q1, q2);
+  auto r = __quantum__qis__mz(q1);
+  auto s = __quantum__qis__mz(q2);
+
+  EXPECT_EQ(*r, *s);
+
+  __quantum__rt__qubit_release_array(qubits);
+  __quantum__rt__finalize();
+}
+
+
 // Stim does not support many of the gates used in these tests.
 #ifndef CUDAQ_BACKEND_STIM
 

@@ -173,10 +173,10 @@ protected:
     static bool trueSeen = false;
     if (!falseSeen && !result) {
       // falseSeen = true;
-      printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
+      // printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
     } else if (!trueSeen && result) {
       // trueSeen = true;
-      printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
+      // printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
     }
     }
     return result;
@@ -220,13 +220,25 @@ public:
       // randomEngine = std::mt19937_64();
     }
 
+    // Run what we've accumulated, but don't include any measurements yet.
+    cudaq::info("BMH partialCircuit is {}", partialCircuit.str());
+    simulator->safe_do_circuit(partialCircuit);
+    partialCircuit.clear();
+    auto newCircuit = tableau_to_circuit_elimination_method(simulator->inv_state.inverse());
+    cudaq::info("BMH newCircuit is {}", newCircuit.str());
+
     randomEngine = std::mt19937_64(std::random_device{}());
 
-    if (midCircuit)
-      safe_append_u("M", stimTargetQubits);
-      // partialCircuit.safe_append_u("M", stimTargetQubits);
-    else
-      fullStimCircuit.safe_append_u("M", stimTargetQubits);
+    // if (midCircuit)
+    //   safe_append_u("M", stimTargetQubits);
+    //   // partialCircuit.safe_append_u("M", stimTargetQubits);
+    // else
+    //   fullStimCircuit.safe_append_u("M", stimTargetQubits);
+
+    partialCircuit.safe_append_u("M", stimTargetQubits);
+    // cudaq::info("BMH calling safe_do_circuit on {}", partialCircuit.str());
+    // simulator->safe_do_circuit(partialCircuit);
+    // partialCircuit.clear();
 
     if (cudaq::details::should_log(cudaq::details::LogLevel::trace)) {
       std::stringstream ss;
@@ -236,7 +248,9 @@ public:
 
     // simulator->measurement_record.storage.clear();
     if (midCircuit) {
+      // partialCircuit.safe_append_u("M", stimTargetQubits);
       simulator->safe_do_circuit(partialCircuit);
+      partialCircuit.clear();
       const std::vector<bool> &v = simulator->measurement_record.storage;
       // ref_sample = stim::simd_bits<stim::MAX_BITWORD_WIDTH>(v.size());
       // for (size_t k = 0; k < v.size(); k++)
@@ -247,7 +261,7 @@ public:
       simulator->postselect_z(
           std::vector<stim::GateTarget>{stim::GateTarget::qubit(qubitNum)},
           measResult);
-      partialCircuit.clear();
+      // partialCircuit.clear();
       std::string shotResults(measResult ? "1" : "0");
       CountsDictionary counts;
       counts.insert({shotResults, 1});
@@ -267,7 +281,7 @@ public:
       ref_sample[k] = v[k];
 
     // FIXME - how do I get a Tableau into a Circuit?
-    auto newCircuit = tableau_to_circuit_elimination_method(simulator->inv_state.inverse());
+    // auto newCircuit = tableau_to_circuit_elimination_method(simulator->inv_state.inverse());
     newCircuit.safe_append_u("M", stimTargetQubits);
     cudaq::info("BMH newCircuit is {}", newCircuit.str());
     cudaq::info("BMH newCircuit2 is {}", tableau_to_circuit_elimination_method(simulator->inv_state).str());
