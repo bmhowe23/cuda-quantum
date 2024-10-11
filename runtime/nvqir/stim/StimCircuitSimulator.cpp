@@ -24,8 +24,12 @@ namespace nvqir {
 /// https://github.com/quantumlib/Stim.
 class StimCircuitSimulator : public nvqir::CircuitSimulatorBase<double> {
 protected:
-  stim::Circuit stimCircuit;
+  stim::Circuit fullStimCircuit;
+  stim::Circuit partialCircuit;
   std::mt19937_64 randomEngine;
+  std::unique_ptr<stim::TableauSimulator<stim::MAX_BITWORD_WIDTH>> simulator;
+  bool midCircuit = false;
+  stim::simd_bits<stim::MAX_BITWORD_WIDTH> ref_sample;
 
   /// @brief Grow the state vector by one qubit.
   void addQubitToState() override { addQubitsToState(1); }
@@ -41,7 +45,24 @@ protected:
   }
 
   /// @brief Reset the qubit state.
-  void deallocateStateImpl() override { stimCircuit.clear(); }
+  void deallocateStateImpl() override {
+    fullStimCircuit.clear();
+    partialCircuit.clear();
+    simulator.reset();
+  }
+
+  void safe_append_ua(const std::string &gate_name,
+                      const std::vector<uint32_t> &targets,
+                      double singleton_arg) {
+    fullStimCircuit.safe_append_ua(gate_name, targets, singleton_arg);
+    partialCircuit.safe_append_ua(gate_name, targets, singleton_arg);
+  }
+
+  void safe_append_u(const std::string &gate_name,
+                     const std::vector<uint32_t> &targets) {
+    fullStimCircuit.safe_append_u(gate_name, targets);
+    partialCircuit.safe_append_u(gate_name, targets);
+  }
 
   /// @brief Apply the noise channel on \p qubits
   void applyNoiseChannel(const std::string_view gateName,
@@ -80,16 +101,13 @@ protected:
 
     for (auto &channel : krausChannels) {
       if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel)
-        stimCircuit.safe_append_ua("X_ERROR", stimTargets,
-                                   channel.parameters[0]);
+        safe_append_ua("X_ERROR", stimTargets, channel.parameters[0]);
       else if (channel.noise_type ==
                cudaq::noise_model_type::phase_flip_channel)
-        stimCircuit.safe_append_ua("Z_ERROR", stimTargets,
-                                   channel.parameters[0]);
+        safe_append_ua("Z_ERROR", stimTargets, channel.parameters[0]);
       else if (channel.noise_type ==
                cudaq::noise_model_type::depolarization_channel)
-        stimCircuit.safe_append_ua("DEPOLARIZE1", stimTargets,
-                                   channel.parameters[0]);
+        safe_append_ua("DEPOLARIZE1", stimTargets, channel.parameters[0]);
     }
   }
 
@@ -119,7 +137,7 @@ protected:
     for (auto t : task.targets)
       stimTargets.push_back(t);
     try {
-      stimCircuit.safe_append_u(gateName, stimTargets);
+      safe_append_u(gateName, stimTargets);
     } catch (std::out_of_range &e) {
       throw std::runtime_error(
           fmt::format("Gate not supported by Stim simulator: {}. Note that "
@@ -137,14 +155,37 @@ protected:
     return 0;
   }
 
-  /// @brief Measure the qubit and return the result. Collapse the
-  /// state vector.
-  bool measureQubit(const std::size_t index) override { return false; }
+  /// @brief Measure the qubit and return the result.
+  bool measureQubit(const std::size_t index) override {
+    // This is a mid-circuit measurement of a single qubit.
+    // TODO - if this is in a loop of measurements, it is fairly inefficient
+    // because each sample call is a fresh entry into Stim. Considering trying
+    // to batch these somehow.
+    midCircuit = true;
+    auto execResult = sample({index}, /*shots=*/1);
+    midCircuit = false;
+    // The measurement value is the first measurement of the first (and only)
+    // shot.
+    bool result = execResult.sequentialData[0][0] == '1';
+    if (index == 0) {
+    cudaq::info("Measured qubit {} -> {}", index, result);
+    static bool falseSeen = false;
+    static bool trueSeen = false;
+    if (!falseSeen && !result) {
+      // falseSeen = true;
+      printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
+    } else if (!trueSeen && result) {
+      // trueSeen = true;
+      printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
+    }
+    }
+    return result;
+  }
 
   QubitOrdering getQubitOrdering() const override { return QubitOrdering::msb; }
 
 public:
-  StimCircuitSimulator() {
+  StimCircuitSimulator() : ref_sample(0), randomEngine(std::random_device{}()) {
     // Populate the correct name so it is printed correctly during
     // deconstructor.
     summaryData.name = name();
@@ -161,7 +202,7 @@ public:
   /// @param index 0-based index of qubit to reset
   void resetQubit(const std::size_t index) override {
     flushGateQueue();
-    stimCircuit.safe_append_u(
+    safe_append_u(
         "R", std::vector<std::uint32_t>{static_cast<std::uint32_t>(index)});
   }
 
@@ -169,18 +210,82 @@ public:
   cudaq::ExecutionResult sample(const std::vector<std::size_t> &qubits,
                                 const int shots) override {
     std::vector<std::uint32_t> stimTargetQubits(qubits.begin(), qubits.end());
-    stimCircuit.safe_append_u("M", stimTargetQubits);
-    if (false) {
-      std::stringstream ss;
-      ss << stimCircuit << '\n';
-      cudaq::log("Stim circuit is\n{}", ss.str());
+
+    if (!simulator) {
+      cudaq::info("BMH Allocating new simulator");
+      simulator =
+          std::make_unique<stim::TableauSimulator<stim::MAX_BITWORD_WIDTH>>(
+              std::move(randomEngine));
+      ref_sample = stim::simd_bits<stim::MAX_BITWORD_WIDTH>(0);
+      // randomEngine = std::mt19937_64();
     }
+
+    randomEngine = std::mt19937_64(std::random_device{}());
+
+    if (midCircuit)
+      safe_append_u("M", stimTargetQubits);
+      // partialCircuit.safe_append_u("M", stimTargetQubits);
+    else
+      fullStimCircuit.safe_append_u("M", stimTargetQubits);
+
+    if (cudaq::details::should_log(cudaq::details::LogLevel::trace)) {
+      std::stringstream ss;
+      ss << fullStimCircuit << '\n';
+      cudaq::details::trace(fmt::format("Stim circuit is\n{}", ss.str()));
+    }
+
+    // simulator->measurement_record.storage.clear();
+    if (midCircuit) {
+      simulator->safe_do_circuit(partialCircuit);
+      const std::vector<bool> &v = simulator->measurement_record.storage;
+      // ref_sample = stim::simd_bits<stim::MAX_BITWORD_WIDTH>(v.size());
+      // for (size_t k = 0; k < v.size(); k++)
+      //   ref_sample[k] = v[k];
+      auto qubitNum = *stimTargetQubits.crbegin();
+      auto measResult = *v.crbegin();
+      cudaq::info("BMH postselect_z v.size {} qubit {} value {}", v.size(), qubitNum, measResult);
+      simulator->postselect_z(
+          std::vector<stim::GateTarget>{stim::GateTarget::qubit(qubitNum)},
+          measResult);
+      partialCircuit.clear();
+      std::string shotResults(measResult ? "1" : "0");
+      CountsDictionary counts;
+      counts.insert({shotResults, 1});
+      ExecutionResult execResult(counts);
+      execResult.sequentialData.push_back(std::move(shotResults));
+      return execResult;
+    } /*else if (ref_sample.num_simd_words == 0) {
+      exit(0); // BMH shouldn't get here for now, fix later
+      ref_sample = stim::TableauSimulator<
+          stim::MAX_BITWORD_WIDTH>::reference_sample_circuit(fullStimCircuit);
+    }*/
+    // safe_append_u("M", stimTargetQubits);
+
+    const std::vector<bool> &v = simulator->measurement_record.storage;
+    ref_sample = stim::simd_bits<stim::MAX_BITWORD_WIDTH>(v.size());
+    for (size_t k = 0; k < v.size(); k++)
+      ref_sample[k] = v[k];
+
+    // FIXME - how do I get a Tableau into a Circuit?
+    auto newCircuit = tableau_to_circuit_elimination_method(simulator->inv_state.inverse());
+    newCircuit.safe_append_u("M", stimTargetQubits);
+    cudaq::info("BMH newCircuit is {}", newCircuit.str());
+    cudaq::info("BMH newCircuit2 is {}", tableau_to_circuit_elimination_method(simulator->inv_state).str());
+    cudaq::info("BMH fullStimCircuit is {}", fullStimCircuit.str());
     auto ref_sample = stim::TableauSimulator<
-        stim::MAX_BITWORD_WIDTH>::reference_sample_circuit(stimCircuit);
+        stim::MAX_BITWORD_WIDTH>::reference_sample_circuit(newCircuit);
     stim::simd_bit_table<stim::MAX_BITWORD_WIDTH> sample =
-        stim::sample_batch_measurements(stimCircuit, ref_sample, shots,
+        stim::sample_batch_measurements(newCircuit, ref_sample, shots,
                                         randomEngine, false);
-    size_t bits_per_sample = stimCircuit.count_measurements();
+    size_t bits_per_sample = newCircuit.count_measurements();
+
+    // randomEngine = std::mt19937_64(std::random_device{}());
+    // // auto ref_sample = stim::TableauSimulator<
+    // //     stim::MAX_BITWORD_WIDTH>::reference_sample_circuit(fullStimCircuit);
+    // stim::simd_bit_table<stim::MAX_BITWORD_WIDTH> sample =
+    //     stim::sample_batch_measurements(fullStimCircuit, ref_sample, shots,
+    //                                     randomEngine, false);
+    // size_t bits_per_sample = fullStimCircuit.count_measurements();
     std::vector<std::string> sequentialData;
     // Only retain the final "qubits.size()" measurements. All other
     // measurements were mid-circuit measurements that have been previously
@@ -194,6 +299,9 @@ public:
         aShot[b - first_bit_to_save] = sample[b][shot] ? '1' : '0';
       }
       counts[aShot]++;
+      if (shots == 1 && cudaq::details::should_log(cudaq::details::LogLevel::trace)) {
+        cudaq::info("BMH qubits {} are {}", stimTargetQubits, aShot);
+      }
       sequentialData.push_back(std::move(aShot));
     }
     ExecutionResult result(counts);
