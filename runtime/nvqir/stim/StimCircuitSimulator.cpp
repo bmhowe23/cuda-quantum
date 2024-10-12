@@ -264,12 +264,7 @@ public:
     if (ref.not_zero()) {
       sample = stim::transposed_vs_ref(shots, sample, ref);
       sample = sample.transposed();
-    } else {
-      sample = sample.transposed();
     }
-    std::string refStr = ref.str();
-    refStr.resize(100);
-    cudaq::info("ref is {}", refStr);
 
     size_t bits_per_sample = num_measurements;
     std::vector<std::string> sequentialData;
@@ -279,12 +274,6 @@ public:
     assert(bits_per_sample >= qubits.size());
     std::size_t first_bit_to_save = bits_per_sample - qubits.size();
     CountsDictionary counts;
-    auto tempStr = sample[0].str();
-    tempStr.resize(100);
-    cudaq::info("sample[{}] is {}", 0, tempStr);
-    tempStr = sample[1].str();
-    tempStr.resize(100);
-    cudaq::info("sample[{}] is {}", 1, tempStr);
     for (std::size_t shot = 0; shot < shots; shot++) {
       std::string aShot(qubits.size(), '0');
       for (std::size_t b = first_bit_to_save; b < bits_per_sample; b++) {
