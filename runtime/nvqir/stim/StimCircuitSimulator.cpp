@@ -221,22 +221,13 @@ protected:
     // Get the tableau bit that was just generated.
     const std::vector<bool> &v = tableau->measurement_record.storage;
     const bool tableauBit = *v.crbegin();
-    cudaq::info("v.size is {} and contents are {}", v.size(), v);
-    stim::simd_bits<W> ref(v.size());
-    for (size_t k = 0; k < v.size(); k++)
-      ref[k] ^= v[k];
 
     // Get the mid-circuit sample to be XOR-ed with tableauBit.
     // FIXME was midCiruitSim
-    stim::simd_bit_table<W> sample = sampleSim->m_record.storage;
-    auto nShots = sampleSim->batch_size;
-    if (ref.not_zero()) {
-      sample = stim::transposed_vs_ref(nShots, sample, ref);
-      sample = sample.transposed();
-    }
+    bool result =
+        sampleSim->m_record.storage[num_measurements - 1][/*shot=*/0] ^
+        tableauBit;
 
-    // bool result = tableauBit ^ static_cast<bool>(sample[num_measurements-1][/*shot=*/0]);
-    bool result = sample[num_measurements-1][/*shot=*/0];
     if (tableauDeterministic &&
         ((result && peekVal < 0) || (!result && peekVal > 0))) {
       // Noise must have corrupted this measurement, so running
