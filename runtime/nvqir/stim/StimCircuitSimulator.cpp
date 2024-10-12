@@ -44,12 +44,16 @@ protected:
 
     if (!tableau) {
       cudaq::info("BMH Allocating new tableau simulator");
+      randomEngine.discard(
+          std::uniform_int_distribution<int>(1, 30)(randomEngine));
       tableau =
           std::make_unique<stim::TableauSimulator<W>>(
             std::mt19937_64(randomEngine), /*num_qubits=*/0, /*sign_bias=*/+0);
     }
     if (!midCircuitSim) {
       cudaq::info("BMH Allocating new midCircuitSim simulator");
+      randomEngine.discard(
+          std::uniform_int_distribution<int>(1, 30)(randomEngine));
       midCircuitSim =
           std::make_unique<stim::FrameSimulator<W>>(
               stim::CircuitStats(),
@@ -60,6 +64,8 @@ protected:
     }
     if (!sampleSim) {
       cudaq::info("BMH Allocating new sampleSim simulator");
+      randomEngine.discard(
+          std::uniform_int_distribution<int>(1, 30)(randomEngine));
       sampleSim =
           std::make_unique<stim::FrameSimulator<W>>(
               stim::CircuitStats(),
@@ -74,6 +80,9 @@ protected:
   void deallocateStateImpl() override {
     tableau.reset();
     midCircuitSim.reset();
+    // Update the randomEngine so that future invocations will be different.
+    if (sampleSim)
+      randomEngine = std::move(sampleSim->rng);
     sampleSim.reset();
     num_measurements = 0;
   }
@@ -193,30 +202,52 @@ protected:
 
   /// @brief Measure the qubit and return the result.
   bool measureQubit(const std::size_t index) override {
-    return false;
-    // This is a mid-circuit measurement of a single qubit.
-    // TODO - if this is in a loop of measurements, it is fairly inefficient
-    // because each sample call is a fresh entry into Stim. Considering trying
-    // to batch these somehow.
-    // midCircuit = true;
-    // auto execResult = sample({index}, /*shots=*/1);
-    // midCircuit = false;
-    // // The measurement value is the first measurement of the first (and only)
-    // // shot.
-    // bool result = execResult.sequentialData[0][0] == '1';
-    // if (index == 0) {
-    // cudaq::info("Measured qubit {} -> {}", index, result);
-    // static bool falseSeen = false;
-    // static bool trueSeen = false;
-    // if (!falseSeen && !result) {
-    //   // falseSeen = true;
-    //   // printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
-    // } else if (!trueSeen && result) {
-    //   // trueSeen = true;
-    //   // printf("BMH result was %d circuit size %s\n", result, fullStimCircuit.operations[1].str().c_str());
-    // }
-    // }
-    // return result;
+    stim::Circuit tempCircuit;
+    std::vector<std::uint32_t> indexAsVec{static_cast<std::uint32_t>(index)};
+    // tempCircuit.safe_append_u(
+    //     "M", std::vector<std::uint32_t>{static_cast<std::uint32_t>(index)});
+
+    // Before we measure, find out if the Tableau says the measurement is
+    // deterministic.
+    bool tableauDeterministic = false;
+    int8_t peekVal = tableau->peek_z(index);
+    if (tableau->is_deterministic_z(index))
+      tableauDeterministic = true;
+
+    // Collapse the tableau
+    safe_append_u("M", indexAsVec);
+    num_measurements++;
+
+    // Get the tableau bit that was just generated.
+    const std::vector<bool> &v = tableau->measurement_record.storage;
+    const bool tableauBit = *v.crbegin();
+    cudaq::info("v.size is {} and contents are {}", v.size(), v);
+    stim::simd_bits<W> ref(v.size());
+    for (size_t k = 0; k < v.size(); k++)
+      ref[k] ^= v[k];
+
+    // Get the mid-circuit sample to be XOR-ed with tableauBit.
+    // FIXME was midCiruitSim
+    stim::simd_bit_table<W> sample = sampleSim->m_record.storage;
+    auto nShots = sampleSim->batch_size;
+    if (ref.not_zero()) {
+      sample = stim::transposed_vs_ref(nShots, sample, ref);
+      sample = sample.transposed();
+    }
+
+    // bool result = tableauBit ^ static_cast<bool>(sample[num_measurements-1][/*shot=*/0]);
+    bool result = sample[num_measurements-1][/*shot=*/0];
+    if (tableauDeterministic &&
+        ((result && peekVal < 0) || (!result && peekVal > 0))) {
+      // Noise must have corrupted this measurement, so running
+      // postselect_z(desired_val=result) would cause bad results.
+      // TODO - verify and handle accordingly?
+      // printf("FIXME %s:%d\n", __FILE__, __LINE__);
+    } else {
+      tableau->postselect_z(std::vector<stim::GateTarget>{index}, result);
+    }
+
+    return result;
   }
 
   QubitOrdering getQubitOrdering() const override { return QubitOrdering::msb; }
@@ -254,15 +285,17 @@ public:
     // Generate a reference sample
     const std::vector<bool> &v = tableau->measurement_record.storage;
     stim::simd_bits<W> ref(v.size());
-    cudaq::info("v.size is {}", v.size());
+    cudaq::info("v.size is {} and contents are {}", v.size(), v);
     for (size_t k = 0; k < v.size(); k++)
       ref[k] ^= v[k];
 
     // Now XOR results on a per-shot basis
     stim::simd_bit_table<W> sample = sampleSim->m_record.storage;
     cudaq::info("sample shots = {}", sampleSim->m_record.num_shots);
+    auto nShots = sampleSim->batch_size;
+    cudaq::info("batch size = {}", nShots);
     if (ref.not_zero()) {
-      sample = stim::transposed_vs_ref(shots, sample, ref);
+      sample = stim::transposed_vs_ref(nShots, sample, ref);
       sample = sample.transposed();
     }
 
@@ -277,8 +310,12 @@ public:
     for (std::size_t shot = 0; shot < shots; shot++) {
       std::string aShot(qubits.size(), '0');
       for (std::size_t b = first_bit_to_save; b < bits_per_sample; b++) {
-        aShot[b - first_bit_to_save] = sample[b][shot] ? '1' : '0';
+        aShot[b - first_bit_to_save] = static_cast<bool>(sample[b][shot]) ? '1' : '0';
       }
+      std::string debugString(bits_per_sample, '0');
+      for (std::size_t b = 0; b < bits_per_sample; b++)
+        debugString[b] = static_cast<bool>(sample[b][shot]) ? '1' : '0';
+      cudaq::info("BMH shot {} debugString {}", shot, debugString);
       counts[aShot]++;
       sequentialData.push_back(std::move(aShot));
     }
