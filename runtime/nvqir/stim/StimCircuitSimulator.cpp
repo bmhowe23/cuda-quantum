@@ -28,7 +28,6 @@ protected:
   std::size_t num_measurements = 0;
   std::mt19937_64 randomEngine;
   std::unique_ptr<stim::TableauSimulator<W>> tableau;
-  std::unique_ptr<stim::FrameSimulator<W>> midCircuitSim;
   std::unique_ptr<stim::FrameSimulator<W>> sampleSim;
 
   /// @brief Grow the state vector by one qubit.
@@ -55,18 +54,6 @@ protected:
           std::make_unique<stim::TableauSimulator<W>>(
             std::mt19937_64(randomEngine), /*num_qubits=*/0, /*sign_bias=*/+0);
     }
-    if (!midCircuitSim) {
-      cudaq::info("BMH Allocating new midCircuitSim simulator");
-      randomEngine.discard(
-          std::uniform_int_distribution<int>(1, 30)(randomEngine));
-      midCircuitSim =
-          std::make_unique<stim::FrameSimulator<W>>(
-              stim::CircuitStats(),
-              stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY,
-              /*batch_size=*/1, std::mt19937_64(randomEngine));
-      // midCircuitSim->guarantee_anticommutation_via_frame_randomization = false;
-      midCircuitSim->reset_all();
-    }
     if (!sampleSim) {
       cudaq::info("BMH Allocating new sampleSim simulator");
       randomEngine.discard(
@@ -84,7 +71,6 @@ protected:
   /// @brief Reset the qubit state.
   void deallocateStateImpl() override {
     tableau.reset();
-    midCircuitSim.reset();
     // Update the randomEngine so that future invocations will be different.
     if (sampleSim)
       randomEngine = std::move(sampleSim->rng);
@@ -107,7 +93,6 @@ protected:
     cudaq::info("Calling safe_append_u {} - {}", gate_name, targets);
     newCircuit.safe_append_u(gate_name, targets);
     tableau->safe_do_circuit(newCircuit);
-    midCircuitSim->safe_do_circuit(newCircuit);
     sampleSim->safe_do_circuit(newCircuit);
   }
 
@@ -157,7 +142,6 @@ protected:
                cudaq::noise_model_type::depolarization_channel)
         noiseCircuit.safe_append_ua("DEPOLARIZE1", stimTargets, channel.parameters[0]);
     }
-    midCircuitSim->safe_do_circuit(noiseCircuit);
     sampleSim->safe_do_circuit(noiseCircuit);
   }
 
