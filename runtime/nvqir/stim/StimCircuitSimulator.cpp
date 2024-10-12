@@ -42,6 +42,11 @@ protected:
       throw std::runtime_error("The Stim simulator does not support "
                                "initialization of qubits from state data.");
 
+    std::size_t batch_size = 1;
+    if (getExecutionContext() && getExecutionContext()->name == "sample" &&
+        !getExecutionContext()->hasConditionalsOnMeasureResults)
+      batch_size = getExecutionContext()->shots;
+
     if (!tableau) {
       cudaq::info("BMH Allocating new tableau simulator");
       randomEngine.discard(
@@ -70,7 +75,7 @@ protected:
           std::make_unique<stim::FrameSimulator<W>>(
               stim::CircuitStats(),
               stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY,
-              /*batch_size=*/10000, std::mt19937_64(randomEngine));
+              batch_size, std::mt19937_64(randomEngine));
       // sampleSim->guarantee_anticommutation_via_frame_randomization = false;
       sampleSim->reset_all();
     }
@@ -235,7 +240,8 @@ protected:
       // TODO - verify and handle accordingly?
       // printf("FIXME %s:%d\n", __FILE__, __LINE__);
     } else {
-      tableau->postselect_z(std::vector<stim::GateTarget>{index}, result);
+      // FIXME???
+      // tableau->postselect_z(std::vector<stim::GateTarget>{index}, result);
     }
 
     return result;
@@ -268,7 +274,7 @@ public:
   /// @brief Sample the multi-qubit state.
   cudaq::ExecutionResult sample(const std::vector<std::size_t> &qubits,
                                 const int shots) override {
-    assert(shots <= 10000);
+    assert(shots <= sampleSim->batch_size);
     std::vector<std::uint32_t> stimTargetQubits(qubits.begin(), qubits.end());
     safe_append_u("M", stimTargetQubits);
     num_measurements += stimTargetQubits.size();
@@ -276,15 +282,12 @@ public:
     // Generate a reference sample
     const std::vector<bool> &v = tableau->measurement_record.storage;
     stim::simd_bits<W> ref(v.size());
-    cudaq::info("v.size is {} and contents are {}", v.size(), v);
     for (size_t k = 0; k < v.size(); k++)
       ref[k] ^= v[k];
 
     // Now XOR results on a per-shot basis
     stim::simd_bit_table<W> sample = sampleSim->m_record.storage;
-    cudaq::info("sample shots = {}", sampleSim->m_record.num_shots);
     auto nShots = sampleSim->batch_size;
-    cudaq::info("batch size = {}", nShots);
     if (ref.not_zero()) {
       sample = stim::transposed_vs_ref(nShots, sample, ref);
       sample = sample.transposed();
@@ -300,129 +303,14 @@ public:
     CountsDictionary counts;
     for (std::size_t shot = 0; shot < shots; shot++) {
       std::string aShot(qubits.size(), '0');
-      for (std::size_t b = first_bit_to_save; b < bits_per_sample; b++) {
-        aShot[b - first_bit_to_save] = static_cast<bool>(sample[b][shot]) ? '1' : '0';
-      }
-      std::string debugString(bits_per_sample, '0');
-      for (std::size_t b = 0; b < bits_per_sample; b++)
-        debugString[b] = static_cast<bool>(sample[b][shot]) ? '1' : '0';
-      cudaq::info("BMH shot {} debugString {}", shot, debugString);
+      for (std::size_t b = first_bit_to_save; b < bits_per_sample; b++)
+        aShot[b - first_bit_to_save] = sample[b][shot] ? '1' : '0';
       counts[aShot]++;
       sequentialData.push_back(std::move(aShot));
     }
     ExecutionResult result(counts);
     result.sequentialData = std::move(sequentialData);
     return result;
-
-    // Run what we've accumulated, but don't include any measurements yet.
-    // cudaq::info("BMH partialCircuit is {}", partialCircuit.str());
-    // tableau->safe_do_circuit(partialCircuit);
-    // partialCircuit.clear();
-    // auto newCircuit = tableau_to_circuit_elimination_method(tableau->inv_state.inverse());
-    // cudaq::info("BMH newCircuit is {}", newCircuit.str());
-
-    // randomEngine = std::mt19937_64(std::random_device{}());
-
-    // if (midCircuit)
-    //   safe_append_u("M", stimTargetQubits);
-    //   // partialCircuit.safe_append_u("M", stimTargetQubits);
-    // else
-    //   fullStimCircuit.safe_append_u("M", stimTargetQubits);
-
-    // safe_append_u("M", stimTargetQubits);
-    // partialCircuit.safe_append_u("M", stimTargetQubits);
-    // cudaq::info("BMH calling safe_do_circuit on {}", partialCircuit.str());
-    // tableau->safe_do_circuit(partialCircuit);
-    // partialCircuit.clear();
-
-    // if (cudaq::details::should_log(cudaq::details::LogLevel::trace)) {
-    //   std::stringstream ss;
-    //   ss << fullStimCircuit << '\n';
-    //   cudaq::details::trace(fmt::format("Stim circuit is\n{}", ss.str()));
-    // }
-
-    // tableau->measurement_record.storage.clear();
-    // if (midCircuit) {
-    //   // The new way of midcircuit measurements is to peek at one of the results (not sure which sim), postselect accordingly
-
-    //   // partialCircuit.safe_append_u("M", stimTargetQubits);
-    //   tableau->safe_do_circuit(partialCircuit);
-    //   partialCircuit.clear();
-    //   const std::vector<bool> &v = tableau->measurement_record.storage;
-    //   // ref_sample = stim::simd_bits<W>(v.size());
-    //   // for (size_t k = 0; k < v.size(); k++)
-    //   //   ref_sample[k] = v[k];
-    //   auto qubitNum = *stimTargetQubits.crbegin();
-    //   auto measResult = *v.crbegin();
-    //   cudaq::info("BMH postselect_z v.size {} qubit {} value {}", v.size(), qubitNum, measResult);
-    //   tableau->postselect_z(
-    //       std::vector<stim::GateTarget>{stim::GateTarget::qubit(qubitNum)},
-    //       measResult);
-    //   // partialCircuit.clear();
-    //   std::string shotResults(measResult ? "1" : "0");
-    //   CountsDictionary counts;
-    //   counts.insert({shotResults, 1});
-    //   ExecutionResult execResult(counts);
-    //   execResult.sequentialData.push_back(std::move(shotResults));
-    //   return execResult;
-    // } /*else if (ref_sample.num_simd_words == 0) {
-    //   exit(0); // BMH shouldn't get here for now, fix later
-    //   ref_sample = stim::TableauSimulator<
-    //       W>::reference_sample_circuit(fullStimCircuit);
-    // }*/
-    // // safe_append_u("M", stimTargetQubits);
-
-    // const std::vector<bool> &v = tableau->measurement_record.storage;
-    // ref_sample = stim::simd_bits<W>(v.size());
-    // for (size_t k = 0; k < v.size(); k++)
-    //   ref_sample[k] = v[k];
-
-    // // FIXME - how do I get a Tableau into a Circuit?
-    // // auto newCircuit = tableau_to_circuit_elimination_method(tableau->inv_state.inverse());
-    // newCircuit.safe_append_u("M", stimTargetQubits);
-    // cudaq::info("BMH newCircuit is {}", newCircuit.str());
-    // cudaq::info("BMH newCircuit2 is {}", tableau_to_circuit_elimination_method(tableau->inv_state).str());
-    // cudaq::info("BMH fullStimCircuit is {}", fullStimCircuit.str());
-
-    // // This works but seems to lose the noisy errors because newCircuit doesn't
-    // // have things like X_ERROR in it. :(
-    // auto ref_sample = stim::TableauSimulator<
-    //     W>::reference_sample_circuit(newCircuit);
-    // auto sample = std::move(frameSim->m_record.storage);
-
-    // // stim::simd_bit_table<W> sample =
-    // //     stim::sample_batch_measurements(newCircuit, ref_sample, shots,
-    // //                                     randomEngine, false);
-    // size_t bits_per_sample = newCircuit.count_measurements();
-
-    // // randomEngine = std::mt19937_64(std::random_device{}());
-    // // // auto ref_sample = stim::TableauSimulator<
-    // // //     W>::reference_sample_circuit(fullStimCircuit);
-    // // stim::simd_bit_table<W> sample =
-    // //     stim::sample_batch_measurements(fullStimCircuit, ref_sample, shots,
-    // //                                     randomEngine, false);
-    // // size_t bits_per_sample = fullStimCircuit.count_measurements();
-    // std::vector<std::string> sequentialData;
-    // // Only retain the final "qubits.size()" measurements. All other
-    // // measurements were mid-circuit measurements that have been previously
-    // // accounted for and saved.
-    // assert(bits_per_sample >= qubits.size());
-    // std::size_t first_bit_to_save = bits_per_sample - qubits.size();
-    // CountsDictionary counts;
-    // for (std::size_t shot = 0; shot < shots; shot++) {
-    //   std::string aShot(qubits.size(), '0');
-    //   for (std::size_t b = first_bit_to_save; b < bits_per_sample; b++) {
-    //     aShot[b - first_bit_to_save] = sample[b][shot] ? '1' : '0';
-    //   }
-    //   counts[aShot]++;
-    //   if (shots == 1 && cudaq::details::should_log(cudaq::details::LogLevel::trace)) {
-    //     cudaq::info("BMH qubits {} are {}", stimTargetQubits, aShot);
-    //   }
-    //   sequentialData.push_back(std::move(aShot));
-    // }
-    // ExecutionResult result(counts);
-    // result.sequentialData = std::move(sequentialData);
-    // return result;
   }
 
   bool isStateVectorSimulator() const override { return false; }
