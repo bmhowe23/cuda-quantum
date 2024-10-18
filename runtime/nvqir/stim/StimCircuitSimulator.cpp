@@ -6,6 +6,7 @@
  * the terms of the Apache License 2.0 which accompanies this distribution.    *
  ******************************************************************************/
 
+#include "common/Environment.h"
 #include "nvqir/CircuitSimulator.h"
 #include "nvqir/Gates.h"
 #include "stim.h"
@@ -39,6 +40,12 @@ protected:
 
   /// @brief Stim Frame/Flip simulator (used to generate multiple shots)
   std::unique_ptr<stim::FrameSimulator<W>> sampleSim;
+
+  /// @brief Stim circuit for debug analysis
+  std::string stimCircuitStr;
+
+  /// @brief Gather Stim circuit commands into \p stimCircuitStr.
+  bool enableStimCircuitStr = false;
 
   /// @brief Grow the state vector by one qubit.
   void addQubitToState() override { addQubitsToState(1); }
@@ -95,6 +102,20 @@ protected:
       randomEngine = std::move(sampleSim->rng);
     sampleSim.reset();
     num_measurements = 0;
+    if (enableStimCircuitStr && !stimCircuitStr.empty()) {
+      // Form a new circuit to give Stim the opportunity to fuse operations.
+      cudaq::log("[cudaq-stim]: Prior Stim circuit was:\n{}",
+                 stim::Circuit(stimCircuitStr).str());
+    }
+    stimCircuitStr.clear();
+  }
+
+  void appendCircuitToDebugStr(const stim::Circuit &circuit) {
+    if (enableStimCircuitStr) {
+      if (!stimCircuitStr.empty())
+        stimCircuitStr += "\n";
+      stimCircuitStr += circuit.str();
+    }
   }
 
   /// @brief Apply operation to all Stim simulators.
@@ -103,6 +124,7 @@ protected:
     stim::Circuit tempCircuit;
     cudaq::info("Calling applyOpToSims {} - {}", gate_name, targets);
     tempCircuit.safe_append_u(gate_name, targets);
+    appendCircuitToDebugStr(tempCircuit);
     tableau->safe_do_circuit(tempCircuit);
     sampleSim->safe_do_circuit(tempCircuit);
   }
@@ -156,6 +178,7 @@ protected:
     }
     // Only apply the noise operations to the sample simulator (not the Tableau
     // simulator).
+    appendCircuitToDebugStr(noiseOps);
     sampleSim->safe_do_circuit(noiseOps);
   }
 
@@ -231,8 +254,10 @@ public:
     // Populate the correct name so it is printed correctly during
     // deconstructor.
     summaryData.name = name();
+    if (cudaq::getEnvBool("CUDAQ_LOG_STIM_CIRC", false))
+      enableStimCircuitStr = true;
   }
-  virtual ~StimCircuitSimulator() = default;
+  virtual ~StimCircuitSimulator() { deallocateStateImpl(); }
 
   void setRandomSeed(std::size_t seed) override {
     randomEngine = std::mt19937_64(seed);
