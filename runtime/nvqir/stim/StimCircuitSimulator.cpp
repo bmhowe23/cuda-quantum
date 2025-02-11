@@ -40,6 +40,14 @@ protected:
   /// @brief Stim Frame/Flip simulator (used to generate multiple shots)
   std::unique_ptr<stim::FrameSimulator<W>> sampleSim;
 
+  /// @brief Stim Frame/Flip simulator (used to generate multiple shots)
+  std::unique_ptr<stim::FrameSimulator<W>> pcmSim;
+
+  static constexpr std::size_t max_num_error_mechanisms = 100'000;
+
+  std::size_t x_err_count = 0;
+  std::size_t z_err_count = 0;
+
   /// @brief Grow the state vector by one qubit.
   void addQubitToState() override { addQubitsToState(1); }
 
@@ -83,6 +91,15 @@ protected:
           stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY, batch_size,
           std::mt19937_64(randomEngine));
       sampleSim->reset_all();
+
+      pcmSim = std::make_unique<stim::FrameSimulator<W>>(
+          stim::CircuitStats(),
+          stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY,
+          max_num_error_mechanisms, std::mt19937_64(randomEngine));
+      pcmSim->guarantee_anticommutation_via_frame_randomization = false;
+      pcmSim->reset_all();
+      x_err_count = 0;
+      z_err_count = 0;
     }
   }
 
@@ -94,7 +111,10 @@ protected:
     if (sampleSim)
       randomEngine = std::move(sampleSim->rng);
     sampleSim.reset();
+    pcmSim.reset();
     num_measurements = 0;
+    x_err_count = 0;
+    z_err_count = 0;
   }
 
   /// @brief Apply operation to all Stim simulators.
@@ -107,6 +127,7 @@ protected:
     tempCircuit.safe_append_u(gate_name, targets);
     tableau->safe_do_circuit(tempCircuit);
     sampleSim->safe_do_circuit(tempCircuit);
+    pcmSim->safe_do_circuit(tempCircuit);
   }
 
   /// @brief Apply the noise channel on \p qubits
@@ -146,15 +167,38 @@ protected:
 
     stim::Circuit noiseOps;
     for (auto &channel : krausChannels) {
-      if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel)
+      if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel) {
         noiseOps.safe_append_ua("X_ERROR", stimTargets, channel.parameters[0]);
-      else if (channel.noise_type ==
-               cudaq::noise_model_type::phase_flip_channel)
+        if (x_err_count + 1 < max_num_error_mechanisms) {
+          for (auto q : stimTargets)
+            pcmSim->x_table[q][x_err_count] ^= 1;
+          x_err_count++;
+        }
+      } else if (channel.noise_type ==
+                 cudaq::noise_model_type::phase_flip_channel) {
         noiseOps.safe_append_ua("Z_ERROR", stimTargets, channel.parameters[0]);
-      else if (channel.noise_type ==
-               cudaq::noise_model_type::depolarization_channel)
+        if (z_err_count + 1 < max_num_error_mechanisms) {
+          for (auto q : stimTargets)
+            pcmSim->z_table[q][z_err_count] ^= 1;
+          z_err_count++;
+        }
+      } else if (channel.noise_type ==
+                 cudaq::noise_model_type::depolarization_channel) {
         noiseOps.safe_append_ua("DEPOLARIZE1", stimTargets,
                                 channel.parameters[0]);
+        if (x_err_count + 1 < max_num_error_mechanisms &&
+            z_err_count + 1 < max_num_error_mechanisms) {
+          for (auto q : stimTargets) {
+            pcmSim->x_table[q][x_err_count] ^= 1;
+            pcmSim->z_table[q][z_err_count] ^= 1;
+          }
+          x_err_count++;
+          z_err_count++;
+        }
+      }
+      cudaq::info(
+          "Applying / application is on x_err_count = {} and z_err_count = {}",
+          x_err_count, z_err_count);
     }
     // Only apply the noise operations to the sample simulator (not the Tableau
     // simulator).
@@ -282,6 +326,24 @@ public:
     // Now XOR results on a per-shot basis
     stim::simd_bit_table<W> sample = sampleSim->m_record.storage;
     auto nShots = sampleSim->batch_size;
+
+    // pcmSample[measure_idx][error_mechanism_index]
+    stim::simd_bit_table<W> pcmSample = pcmSim->m_record.storage;
+    {
+      cudaq::info(
+          "BMH pcmSample is {} {}\n{}", x_err_count, z_err_count,
+          pcmSample.str(num_measurements, std::max(x_err_count, z_err_count))
+              .c_str());
+      // // Now it's pcmSample[error_mechanism_index][measure_idx]
+      // pcmSample = pcmSample.transposed();
+      // CountsDictionary counts;
+      // ExecutionResult result(counts);
+      // std::vector<std::string> sequentialData;
+      // for (std::size_t shot = 0; shot < shots; shot++) {
+      // }
+    }
+
+    // For every measurement
 
     // This is a slightly modified version of `sample_batch_measurements`, where
     // we already have the `sample` from the frame simulator. It also places the
