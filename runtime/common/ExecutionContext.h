@@ -117,6 +117,10 @@ public:
   /// order.
   bool explicitMeasurements = false;
 
+  /// @brief Probability of occurrence of each error mechanism (column) in PCM
+  /// matrix. (0-1 range)
+  std::vector<double> pcm_probabilities;
+
   /// @brief The Constructor, takes the name of the context
   /// @param n The name of the context
   ExecutionContext(const std::string n) : name(n) {}
