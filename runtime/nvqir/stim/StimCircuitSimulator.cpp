@@ -40,8 +40,13 @@ protected:
   /// @brief Stim Frame/Flip simulator (used to generate multiple shots)
   std::unique_ptr<stim::FrameSimulator<W>> sampleSim;
 
-  /// @brief Error counter for PCM matrix generation
+  /// @brief Error counter for PCM matrix generation. This is only used for
+  /// "pcm" and "pcm_size" execution contexts.
   std::size_t pcm_err_count = 0;
+
+  /// @brief Whether or not the execution context name is "pcm" (value is cached
+  /// for speed)
+  bool is_pcm_mode = false;
 
   /// @brief Grow the state vector by one qubit.
   void addQubitToState() override { addQubitsToState(1); }
@@ -53,27 +58,31 @@ protected:
     if (getExecutionContext() && getExecutionContext()->name == "sample" &&
         !getExecutionContext()->hasConditionalsOnMeasureResults)
       batch_size = getExecutionContext()->shots;
-    if (getExecutionContext() &&
-        getExecutionContext()->name == "experimental_pcm")
-      batch_size = getExecutionContext()->shots;
+    else if (getExecutionContext() && getExecutionContext()->name == "pcm")
+      batch_size = getExecutionContext()
+                       ->pcm_dimensions.value_or(std::make_pair(1, 1))
+                       .second;
     return batch_size;
   }
 
-  std::size_t generatePCMSize() override {
-    return pcm_err_count;
+  /// @brief Return the number of rows and columns needed for a Parity Check
+  /// Matrix
+  std::pair<std::size_t, std::size_t> generatePCMSize() override {
+    return std::make_pair(num_measurements, pcm_err_count);
   }
 
   void generatePCM() override {
+    const auto num_cols = getBatchSize();
     stim::simd_bit_table<W> pcmSample = sampleSim->m_record.storage;
-    cudaq::info(
-        "pcmSample is {} {}\n{}", pcm_err_count, executionContext->shots,
-        pcmSample.str(num_measurements, executionContext->shots).c_str());
+    cudaq::info("pcmSample is {} {}\n{}", pcm_err_count, num_cols,
+                pcmSample.str(num_measurements, num_cols).c_str());
 
     // Now it's pcmSample[error_mechanism_index][measure_idx]
     pcmSample = pcmSample.transposed();
     CountsDictionary counts;
     std::vector<std::string> sequentialData;
-    for (std::size_t shot = 0; shot < executionContext->shots; shot++) {
+    sequentialData.reserve(num_cols);
+    for (std::size_t shot = 0; shot < num_cols; shot++) {
       std::string aShot(num_measurements, '0');
       for (std::size_t b = 0; b < num_measurements; b++)
         aShot[b] = pcmSample[shot][b] ? '1' : '0';
@@ -103,6 +112,23 @@ protected:
           std::mt19937_64(randomEngine), /*num_qubits=*/0, /*sign_bias=*/+0);
     }
     if (!sampleSim) {
+      is_pcm_mode = executionContext && executionContext->name == "pcm";
+      std::size_t anticipated_num_measurements = 0;
+      std::size_t num_pcm_cols = 0;
+      if (is_pcm_mode) {
+        auto dims =
+            executionContext->pcm_dimensions.value_or(std::make_pair(1, 1));
+        anticipated_num_measurements = dims.first;
+        num_pcm_cols = dims.second;
+        executionContext->pcm_probabilities.emplace();
+        executionContext->pcm_probabilities->reserve(num_pcm_cols);
+      }
+
+      // If possible, provide a non-empty stim::CircuitStats in order to avoid
+      // reallocations during execution.
+      stim::CircuitStats circuit_stats;
+      circuit_stats.num_measurements = anticipated_num_measurements;
+
       auto batch_size = getBatchSize();
       cudaq::info("Creating new Stim frame simulator with batch size {}",
                   batch_size);
@@ -111,14 +137,13 @@ protected:
       randomEngine.discard(
           std::uniform_int_distribution<int>(1, 30)(randomEngine));
       sampleSim = std::make_unique<stim::FrameSimulator<W>>(
-          stim::CircuitStats(),
-          stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY, batch_size,
-          std::mt19937_64(randomEngine));
-      if (executionContext && executionContext->name == "experimental_pcm") {
+          circuit_stats, stim::FrameSimulatorMode::STORE_MEASUREMENTS_TO_MEMORY,
+          batch_size, std::mt19937_64(randomEngine));
+      if (is_pcm_mode) {
         sampleSim->guarantee_anticommutation_via_frame_randomization = false;
       }
       sampleSim->reset_all();
-      pcm_err_count= 0;
+      pcm_err_count = 0;
     }
   }
 
@@ -132,6 +157,7 @@ protected:
     sampleSim.reset();
     num_measurements = 0;
     pcm_err_count = 0;
+    is_pcm_mode = false;
   }
 
   /// @brief Apply operation to all Stim simulators.
@@ -178,37 +204,35 @@ protected:
     if (krausChannels.empty())
       return;
 
-    bool isPCMMode =
-        executionContext && executionContext->name == "experimental_pcm";
     cudaq::info("Applying {} kraus channels to qubits {}", krausChannels.size(),
                 stimTargets);
 
     stim::Circuit noiseOps;
     for (auto &channel : krausChannels) {
       if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel) {
-        if (!isPCMMode)
+        if (!is_pcm_mode)
           noiseOps.safe_append_ua("X_ERROR", stimTargets,
                                   channel.parameters[0]);
         else if (pcm_err_count < sampleSim->batch_size) {
           for (auto q : stimTargets)
             sampleSim->x_table[q][pcm_err_count] ^= 1;
-          executionContext->pcm_probabilities.push_back(channel.parameters[0]);
+          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
         }
         pcm_err_count++;
       } else if (channel.noise_type ==
                  cudaq::noise_model_type::phase_flip_channel) {
-        if (!isPCMMode)
+        if (!is_pcm_mode)
           noiseOps.safe_append_ua("Z_ERROR", stimTargets,
                                   channel.parameters[0]);
         else if (pcm_err_count < sampleSim->batch_size) {
           for (auto q : stimTargets)
             sampleSim->z_table[q][pcm_err_count] ^= 1;
-          executionContext->pcm_probabilities.push_back(channel.parameters[0]);
+          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
         }
         pcm_err_count++;
       } else if (channel.noise_type ==
                  cudaq::noise_model_type::depolarization_channel) {
-        if (!isPCMMode)
+        if (!is_pcm_mode)
           noiseOps.safe_append_ua("DEPOLARIZE1", stimTargets,
                                   channel.parameters[0]);
         else if (pcm_err_count < sampleSim->batch_size) {
@@ -216,17 +240,21 @@ protected:
             sampleSim->x_table[q][pcm_err_count] ^= 1;
             sampleSim->z_table[q][pcm_err_count] ^= 1;
           }
-          executionContext->pcm_probabilities.push_back(channel.parameters[0]);
+          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
         }
         pcm_err_count++;
       }
       cudaq::info("Applying / application is on pcm_err_count = {}",
                   pcm_err_count);
     }
-    // Only apply the noise operations to the sample simulator (not the Tableau
-    // simulator).
-    if (!isPCMMode)
+    if (is_pcm_mode) {
+      // Don't apply anything else to sampleSim because that was already
+      // manipulated above.
+    } else {
+      // Only apply the noise operations to the sample simulator (not the
+      // Tableau simulator).
       sampleSim->safe_do_circuit(noiseOps);
+    }
   }
 
   void applyGate(const GateApplicationTask &task) override {

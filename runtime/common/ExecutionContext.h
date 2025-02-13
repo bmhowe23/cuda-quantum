@@ -119,7 +119,10 @@ public:
 
   /// @brief Probability of occurrence of each error mechanism (column) in PCM
   /// matrix. (0-1 range)
-  std::vector<double> pcm_probabilities;
+  std::optional<std::vector<double>> pcm_probabilities;
+
+  /// @brief The number of rows and columns of a Parity Check Matrix
+  std::optional<std::pair<std::size_t, std::size_t>> pcm_dimensions;
 
   /// @brief The Constructor, takes the name of the context
   /// @param n The name of the context

@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 
   // Stage 1 - get the PCM size by running with "experimental_pcm_size". The
   // result will be returned in ctx_pcm_size.shots.
-  cudaq::ExecutionContext ctx_pcm_size("experimental_pcm_size");
+  cudaq::ExecutionContext ctx_pcm_size("pcm_size");
   ctx_pcm_size.noiseModel = &noise;
   auto &platform = cudaq::get_platform();
   platform.set_exec_ctx(&ctx_pcm_size);
@@ -67,9 +67,9 @@ int main(int argc, char *argv[]) {
   platform.reset_exec_ctx();
 
   // Stage 2 - get the PCM using the ctx_pcm_size.shots value.
-  cudaq::ExecutionContext ctx_pcm("experimental_pcm");
+  cudaq::ExecutionContext ctx_pcm("pcm");
   ctx_pcm.noiseModel = &noise;
-  ctx_pcm.shots = ctx_pcm_size.shots;
+  ctx_pcm.pcm_dimensions = ctx_pcm_size.pcm_dimensions;
   platform.set_exec_ctx(&ctx_pcm);
   stress_test{}(num_qubits, num_rounds);
   platform.reset_exec_ctx();
@@ -80,8 +80,8 @@ int main(int argc, char *argv[]) {
   auto pcm_as_strings = ctx_pcm.result.sequential_data();
   printf("Columns of PCM:\n");
   for (int col = 0; auto x : pcm_as_strings) {
-    printf("Column %02d (Prob %.6f): %s\n", col, ctx_pcm.pcm_probabilities[col],
-           x.c_str());
+    printf("Column %02d (Prob %.6f): %s\n", col,
+           ctx_pcm.pcm_probabilities.value()[col], x.c_str());
     col++;
   }
   for (auto &[k, v] : ctx_pcm.result.to_map()) {

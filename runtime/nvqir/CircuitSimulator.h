@@ -137,8 +137,10 @@ public:
   virtual void synchronize() {}
 
   /// @brief For simulators that support generating a PCM, this returns the
-  /// number of columns in the PCM (for a given noisy kernel)
-  virtual std::size_t generatePCMSize() { return 0; }
+  /// number of rows and columns in the PCM (for a given noisy kernel)
+  virtual std::pair<std::size_t, std::size_t> generatePCMSize() {
+    return std::make_pair<std::size_t, std::size_t>(0, 0);
+  }
 
   /// @brief For simulators that support generating a PCM, this generates the
   /// PCM and stores the result in the execution context. The result is only
@@ -1158,12 +1160,12 @@ public:
       executionContext->simulationState = getSimulationState();
     }
 
-    if (executionContext->name == "experimental_pcm_size") {
+    if (executionContext->name == "pcm_size") {
       flushGateQueue();
-      executionContext->shots = generatePCMSize();
+      executionContext->pcm_dimensions = generatePCMSize();
     }
 
-    if (executionContext->name == "experimental_pcm") {
+    if (executionContext->name == "pcm") {
       flushGateQueue();
       generatePCM();
     }
