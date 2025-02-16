@@ -144,6 +144,73 @@ def test_measurement_order():
     counts = cudaq.sample(kernel, explicit_measurements=True)
     assert counts["010"] == 1000
 
+    @cudaq.kernel
+    def kernel_with_loop():
+        q = cudaq.qvector(3)
+        for _ in range(3):
+            x(q[0])
+            mz(q[1])
+            mz(q[0])
+            mz(q[2])
+            reset(q)
+
+    counts = cudaq.sample(kernel_with_loop)
+    assert counts["000"] == 1000  # due to reset
+
+    counts = cudaq.sample(kernel_with_loop, explicit_measurements=True)
+    assert counts["010010010"] == 1000
+
+
+def test_multiple_measurements():
+
+    @cudaq.kernel
+    def measure_twice():
+        q = cudaq.qubit()
+        x(q)
+        mz(q)
+        mz(q)
+
+    counts = cudaq.sample(measure_twice)
+    assert counts["1"] == 1000
+
+    counts = cudaq.sample(measure_twice, explicit_measurements=True)
+    assert counts["11"] == 1000
+
+
+@pytest.mark.skip(reason="WIP: Not failing as expected")
+def test_no_measurements():
+    """ Test for kernels executed in "explicit measurements" mode must contain measurements. """
+
+    @cudaq.kernel
+    def kernel():
+        q = cudaq.qvector(2)
+        h(q[0])
+        cx(q[0], q[1])
+
+    counts = cudaq.sample(kernel)
+    assert len(counts) == 2
+
+    with pytest.raises(RuntimeError) as _:
+        cudaq.sample(kernel, explicit_measurements=True)
+
+
+def test_mx_my():
+
+    @cudaq.kernel
+    def my_kernel():
+        q = cudaq.qvector(2)
+        h(q[0])
+        x.ctrl(q[0], q[1])
+        mx(q[0])
+        my(q[1])
+
+    ## TODO: Check expected behavior
+    counts = cudaq.sample(my_kernel)
+    counts.dump()  # gives `{ 0:488 1:512 }`
+
+    counts = cudaq.sample(my_kernel, explicit_measurements=True)
+    counts.dump()  # gives `{ 00:256 01:253 10:234 11:257 }`
+
 
 # NOTE: Ref - https://github.com/NVIDIA/cuda-quantum/issues/1925
 @pytest.mark.parametrize("target",
@@ -205,6 +272,7 @@ def test_error_cases():
         e)
 
     ## NOTE: The following does not fail.
+    ## See: https://github.com/NVIDIA/cuda-quantum/issues/2000
     # @cudaq.kernel
     # def measure(q: cudaq.qubit) -> bool:
     #     return mz(q)
