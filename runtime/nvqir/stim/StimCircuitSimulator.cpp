@@ -272,6 +272,8 @@ protected:
           fmt::format("Gate not supported by Stim simulator: {}. Note that "
                       "Stim can only simulate Clifford gates.",
                       task.operationName));
+    else if (gateName == "SDG")
+      gateName = "S_DAG";
 
     if (task.controls.size() > 1)
       throw std::runtime_error(
