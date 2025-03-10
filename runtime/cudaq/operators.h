@@ -69,11 +69,13 @@ protected:
   std::vector<std::vector<HandlerTy>> terms;
   std::vector<scalar_operator> coefficients;
 
-  constexpr sum_op(){};
   sum_op(const sum_op<HandlerTy> &other, bool sized, int size);
   sum_op(sum_op<HandlerTy> &&other, bool sized, int size);
 
 public:
+
+  // Default constructor constructs an identity term.
+  constexpr sum_op() : sum_op(1.0) {}
 
   // called const_iterator because it will *not* modify the sum, 
   // regardless of what is done with the products/iterator
@@ -931,10 +933,10 @@ extern template class sum_op<fermion_handler>;
 
 // Here only for backward compatibility
 namespace spin {
-  sum_op<spin_handler> i(std::size_t target);
-  sum_op<spin_handler> x(std::size_t target);
-  sum_op<spin_handler> y(std::size_t target);
-  sum_op<spin_handler> z(std::size_t target);
+  product_op<spin_handler> i(std::size_t target);
+  product_op<spin_handler> x(std::size_t target);
+  product_op<spin_handler> y(std::size_t target);
+  product_op<spin_handler> z(std::size_t target);
 }
 
 } // namespace cudaq

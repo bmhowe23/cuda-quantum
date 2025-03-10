@@ -183,16 +183,16 @@ sum_op<spin_handler> spin_handler::minus(int degree) {
 }
 
 namespace spin {
-  sum_op<spin_handler> i(std::size_t target) {
+  product_op<spin_handler> i(std::size_t target) {
     return spin_handler::i(target);
   }
-  sum_op<spin_handler> x(std::size_t target) {
+  product_op<spin_handler> x(std::size_t target) {
     return spin_handler::x(target);
   }
-  sum_op<spin_handler> y(std::size_t target) {
+  product_op<spin_handler> y(std::size_t target) {
     return spin_handler::y(target);
   }
-  sum_op<spin_handler> z(std::size_t target) {
+  product_op<spin_handler> z(std::size_t target) {
     return spin_handler::z(target);
   }
 }
