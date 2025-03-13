@@ -528,7 +528,9 @@ bool QuakeBridgeVisitor::VisitFunctionDecl(clang::FunctionDecl *x) {
     auto fSym = f.getSymNameAttr();
     return pushValue(builder.create<func::ConstantOp>(loc, fTy, fSym));
   }
-  auto funcOp = getOrAddFunc(loc, kernName, typeFromStack).first;
+  auto [funcOp, alreadyAdded] = getOrAddFunc(loc, kernName, typeFromStack);
+  if (!alreadyAdded)
+    funcOp.setPrivate();
   return pushValue(builder.create<func::ConstantOp>(
       loc, funcOp.getFunctionType(), funcOp.getSymNameAttr()));
 }
@@ -623,8 +625,13 @@ bool QuakeBridgeVisitor::VisitVarDecl(clang::VarDecl *x) {
     return true;
   }
   Type type = popType();
-  if (x->hasInit() && !x->isCXXForRangeDecl())
+  if (x->hasInit() && !x->isCXXForRangeDecl()) {
+    LLVM_DEBUG(llvm::dbgs() << "variable " << x->getName()
+                            << " has initializer of " << peekValue() << '\n');
     type = peekValue().getType();
+  }
+  LLVM_DEBUG(llvm::dbgs() << "type for variable " << x->getName() << " is "
+                          << type << '\n');
   assert(type && "variable must have a valid type");
   auto loc = toLocation(x->getSourceRange());
   auto name = x->getName();

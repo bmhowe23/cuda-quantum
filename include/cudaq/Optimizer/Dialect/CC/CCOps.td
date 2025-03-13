@@ -1655,6 +1655,42 @@ def cc_CallableClosureOp : CCOp<"callable_closure", [Pure]> {
   }];
 }
 
+def cc_DeviceCallOp :
+    CCOp<"device_call", [CallOpInterface, SymbolUserOpInterface]> {
+  let summary = "Create a QPU callback.";
+  let description = [{
+    In a tightly coupled environment, the quantum code may callback to regular
+    classical C++ code on the control driver. This op is therefore used to
+    execute classical compute code from within a quantum kernel on the tightly
+    integrated (expanded) QPU model.
+  }];
+
+  let arguments = (ins
+    FlatSymbolRefAttr:$callee,
+    Variadic<AnyType>:$args
+  );
+  let results = (outs Variadic<AnyType>);
+  let assemblyFormat = [{
+    $callee `(` $args `)` `:` functional-type(operands, results) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    operand_range getArgOperands() {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    mlir::CallInterfaceCallable getCallableForCallee() {
+      return getCalleeAttr();
+    }
+
+    mlir::LogicalResult verifySymbolUses(mlir::SymbolTableCollection &);
+  }];
+}
+
 def cc_VarargCallOp :
     CCOp<"call_vararg", [CallOpInterface, SymbolUserOpInterface]> {
   let summary = "Create a call to an llvm.func with variadic arguments.";

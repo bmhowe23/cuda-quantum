@@ -22,6 +22,15 @@ struct KernelThunkResultType {
 /// The universal signature of a kernel thunk.
 using KernelThunkType = KernelThunkResultType (*)(void *, bool);
 
+/// The device call will return a result (if any) in memory. The marshal
+/// function will translate this to the effective return type.
+using CallbackResultType = KernelThunkResultType;
+
+/// Every unmarshal function has an identical signature so the runtime can
+/// always invoke any of them in the same way. The arguments are the argument
+/// buffer and a flag to indicate that the return result should be copied.
+using UnmarshalFuncType = CallbackResultType (*)(void *, bool);
+
 /// The degenerate form of a kernel call. In some launch cases, it may be
 /// predetermined that the kernel can be called without a thunk.
 using KernelDegenerateType = void (*)(void *);

@@ -291,6 +291,39 @@ def cc_CharSpanType
 def IsSpanLikePred : CPred<"$_self.isa<cudaq::cc::SpanLikeType>()">;
 def SpanningType : Type<IsSpanLikePred, "dynamic length type">;
 
+def cc_DeviceArgsType : CCType<"DeviceArgs", "device_args"> {
+  let summary = "Abstraction for a bundle of arguments for a device_call.";
+  let description = [{
+    The cudaq::device_call() operation may be decomposed into substeps for
+    execution in a distributed memory integrated QPU. These substeps require
+    the managment, marshalling, and unmarshalling of arguments. This abstract
+    data type hides the actual implementation of these argument data buffers.
+  }];
+  let genStorageClass = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StateType
+//===----------------------------------------------------------------------===//
+
+def cc_StateType : CCType<"State", "state"> {
+  let summary = "Proxy for the cudaq::state class.";
+  let description = [{
+    The cudaq::state class is an abstraction for any data that may be used to
+    describe the initial state of a set of qubits. It would typically be used
+    in a simulation environment.
+
+    The CUDA-Q runtime will implement an ABI of intrinsic functions for the
+    compiler generated code to interface with this information in a generic
+    manner.
+
+    There are no legal operations in Quake/CC on a value of type `!cc.state`.
+    Only pointers to such values should exist in the IR for the purposes of
+    passing references to state objects to runtime functions at codegen.
+  }];
+  let genStorageClass = 0;
+}
+
 def AnyStateInitLike : TypeConstraint<cc_PointerType.predicate,
                          "state initializer types">;
 def AnyStateInitType : Type<AnyStateInitLike.predicate, "initial state type">;

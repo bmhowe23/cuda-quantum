@@ -13,6 +13,7 @@ namespace cudaq::registry {
 extern "C" {
 void __cudaq_deviceCodeHolderAdd(const char *, const char *);
 void cudaqRegisterKernelName(const char *);
+void cudaqRegisterCallbackName(const char *);
 void cudaqRegisterArgsCreator(const char *, char *);
 void cudaqRegisterLambdaName(const char *, const char *);
 

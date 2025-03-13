@@ -44,7 +44,7 @@ bool factory::isAArch64(ModuleOp module) {
 }
 
 template <bool isOutput>
-static Type genBufferType(Type ty) {
+Type genBufferType(Type ty) {
   auto *ctx = ty.getContext();
   if (isa<cudaq::cc::CallableType>(ty))
     return cudaq::cc::PointerType::get(ctx);

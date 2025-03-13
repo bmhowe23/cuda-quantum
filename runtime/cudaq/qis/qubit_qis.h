@@ -852,8 +852,8 @@ inline SpinMeasureResult measure(const cudaq::spin_op &term) {
 
 // Cast a measure register to an int64_t.
 // This function is classic control code that may run on a QPU.
-inline int64_t to_integer(std::vector<measure_result> bits) {
-  int64_t ret = 0;
+inline std::int64_t to_integer(const std::vector<measure_result> &bits) {
+  std::int64_t ret = 0;
   for (std::size_t i = 0; i < bits.size(); i++) {
     if (bits[i]) {
       ret |= 1UL << i;
@@ -862,9 +862,10 @@ inline int64_t to_integer(std::vector<measure_result> bits) {
   return ret;
 }
 
-inline int64_t to_integer(std::string bitString) {
-  std::reverse(bitString.begin(), bitString.end());
-  return std::stoull(bitString, nullptr, 2);
+inline std::int64_t to_integer(const std::string &bitString) {
+  std::string bitstring{bitString};
+  std::reverse(bitstring.begin(), bitstring.end());
+  return std::stoull(bitstring, nullptr, 2);
 }
 
 #if CUDAQ_USE_STD20

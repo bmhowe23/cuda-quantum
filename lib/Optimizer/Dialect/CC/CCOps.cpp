@@ -358,6 +358,9 @@ LogicalResult cudaq::cc::CastOp::verify() {
   } else if (isa<cc::PointerType, LLVM::LLVMPointerType>(inTy) &&
              isa<cc::PointerType, LLVM::LLVMPointerType>(outTy)) {
     // ok, pointer casts: bitcast, nop
+  } else if (isa<cc::PointerType, LLVM::LLVMPointerType>(inTy) &&
+             isa<cc::DeviceArgsType>(outTy)) {
+    // ok, will become pointer casts: nop
   } else if (isa<ComplexType>(inTy) && isa<ComplexType>(outTy)) {
     // ok, type conversion of a complex value
     // NB: use complex.re or complex.im to convert (extract) a fp value.
@@ -2085,6 +2088,50 @@ MutableOperandRange cudaq::cc::ConditionOp::getMutableSuccessorOperands(
 }
 
 //===----------------------------------------------------------------------===//
+// DeviceCallOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+cudaq::cc::DeviceCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Check that the callee attribute was specified.
+  auto fnAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
+  if (!fnAttr)
+    return emitOpError("requires a 'callee' symbol reference attribute");
+  func::FuncOp fn =
+      symbolTable.lookupNearestSymbolFrom<func::FuncOp>(*this, fnAttr);
+  if (!fn)
+    return emitOpError() << "'" << fnAttr.getValue()
+                         << "' does not reference a valid function";
+
+  // Verify that the operand and result types match the callee.
+  auto fnType = fn.getFunctionType();
+  if (fnType.getNumInputs() != getNumOperands())
+    return emitOpError("incorrect number of operands for callee");
+
+  for (unsigned i = 0, e = fnType.getNumInputs(); i != e; ++i)
+    if (getOperand(i).getType() != fnType.getInput(i)) {
+      return emitOpError("operand type mismatch: expected operand type ")
+             << fnType.getInput(i) << ", but provided "
+             << getOperand(i).getType() << " for operand number " << i;
+    }
+
+  if (fnType.getResults().empty() && getNumResults() == 0)
+    return success();
+
+  if (fnType.getNumResults() != getNumResults())
+    return emitOpError("number of results does not agree");
+
+  for (auto [myRes, resTy] : llvm::zip(getResults(), fnType.getResults()))
+    if (myRes.getType() != resTy) {
+      auto diag = emitOpError("result type mismatch ");
+      diag.attachNote() << "      op result types: " << myRes.getType();
+      diag.attachNote() << "function result types: " << resTy;
+      return diag;
+    }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // OffsetOfOp
 //===----------------------------------------------------------------------===//
 
@@ -2389,7 +2436,7 @@ cudaq::cc::VarargCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (getNumResults() > 1)
     return emitOpError("wrong number of result types: ") << getNumResults();
 
-  if (getResult(1).getType() != fnType.getReturnType()) {
+  if (getResult(0).getType() != fnType.getReturnType()) {
     auto diag = emitOpError("result type mismatch ");
     diag.attachNote() << "      op result types: " << getResultTypes();
     diag.attachNote() << "function result types: " << fnType.getReturnType();

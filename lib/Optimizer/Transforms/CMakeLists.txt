@@ -25,6 +25,7 @@ add_cudaq_library(OptTransforms
   DecompositionPatterns.cpp
   DelayMeasurements.cpp
   DeleteStates.cpp
+  DistributedDeviceCall.cpp
   EraseNoise.cpp
   EraseNopCalls.cpp
   ExpandControlVeqs.cpp

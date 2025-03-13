@@ -242,6 +242,7 @@ void cudaq::registry::__cudaq_deviceCodeHolderAdd(const char *key,
 //===----------------------------------------------------------------------===//
 
 static std::vector<std::string> kernelRegistry;
+static std::vector<std::string> callbackRegistry;
 
 static std::map<std::string, cudaq::KernelArgsCreator> argsCreators;
 static std::map<std::string, std::string> lambdaNames;
@@ -250,6 +251,11 @@ static std::map<void *, std::pair<const char *, void *>> linkableKernelRegistry;
 void cudaq::registry::cudaqRegisterKernelName(const char *kernelName) {
   std::unique_lock<std::shared_mutex> lock(globalRegistryMutex);
   kernelRegistry.emplace_back(kernelName);
+}
+
+void cudaq::registry::cudaqRegisterCallbackName(const char *callbackName) {
+  std::unique_lock<std::shared_mutex> lock(globalRegistryMutex);
+  callbackRegistry.emplace_back(callbackName);
 }
 
 void cudaq::registry::__cudaq_registerLinkableKernel(void *hostSideFunc,

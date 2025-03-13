@@ -232,88 +232,6 @@ static bool isExclaimOperator(clang::OverloadedOperatorKind kind) {
   return isOperatorKind<clang::OverloadedOperatorKind::OO_Exclaim>(kind);
 }
 
-// Map the measured bit vector to an i32 representation.
-static Value toIntegerImpl(OpBuilder &builder, Location loc, Value bitVec) {
-  // TODO: Consider moving toIntegerImpl to an intrinsic.
-
-  // Overall strategy in pseudo-C
-  // auto toInteger = [](vector<i1> bits, int nBits) {
-  //   int i = 0;
-  //   for (int j = 0; j < nBits; j++) {
-  //     // lsb
-  //     k = nBits-j-1;
-  //     i ^= (-bits[k] ^ i) & (1 << k);
-  //   }
-  //   return i;
-  // };
-  // should print 7
-  // auto k = toInteger({1,1,1}, 3);
-  // printf("%d\n", k);
-
-  // get bitVec size
-  Value bitVecSize = builder.create<cudaq::cc::StdvecSizeOp>(
-      loc, builder.getI32Type(), bitVec);
-
-  // Useful types and values
-  auto i32Ty = builder.getI32Type();
-  Value one = builder.create<arith::ConstantIntOp>(loc, 1, i32Ty);
-  Value negOne = builder.create<arith::ConstantIntOp>(loc, -1, i32Ty);
-
-  // Create int i = 0;
-  Value stackSlot = builder.create<cudaq::cc::AllocaOp>(loc, i32Ty);
-  Value zeroInt = builder.create<arith::ConstantIntOp>(loc, 0, i32Ty);
-  builder.create<cudaq::cc::StoreOp>(loc, zeroInt, stackSlot);
-
-  // Create the for loop
-  Value rank = builder.create<cudaq::cc::CastOp>(
-      loc, builder.getI32Type(), bitVecSize, cudaq::cc::CastOpMode::Unsigned);
-  cudaq::opt::factory::createInvariantLoop(
-      builder, loc, rank,
-      [&](OpBuilder &nestedBuilder, Location nestedLoc, Region &,
-          Block &block) {
-        Value iv = block.getArgument(0);
-        OpBuilder::InsertionGuard guard(nestedBuilder);
-
-        // Compute the idx in bit[idx]
-        Value kIter = builder.create<arith::SubIOp>(loc, bitVecSize, iv);
-        kIter = builder.create<arith::SubIOp>(loc, kIter, one);
-
-        // 1 << k
-        Value rightPart = builder.create<arith::ShLIOp>(loc, one, kIter);
-
-        // bits[k]
-        auto eleTy =
-            cast<cudaq::cc::SpanLikeType>(bitVec.getType()).getElementType();
-        auto elePtrTy = cudaq::cc::PointerType::get(eleTy);
-        auto eleArrTy =
-            cudaq::cc::PointerType::get(cudaq::cc::ArrayType::get(eleTy));
-        auto vecPtr =
-            builder.create<cudaq::cc::StdvecDataOp>(loc, eleArrTy, bitVec);
-        auto eleAddr = builder.create<cudaq::cc::ComputePtrOp>(
-            loc, elePtrTy, vecPtr, ValueRange{kIter});
-        Value bitElement = builder.create<cudaq::cc::LoadOp>(loc, eleAddr);
-
-        // -bits[k]
-        bitElement = builder.create<cudaq::cc::CastOp>(
-            loc, builder.getI32Type(), bitElement,
-            cudaq::cc::CastOpMode::Unsigned);
-        bitElement = builder.create<arith::MulIOp>(loc, negOne, bitElement);
-
-        // -bits[k] ^ i
-        Value integer = builder.create<cudaq::cc::LoadOp>(loc, stackSlot);
-        Value leftPart =
-            builder.create<arith::XOrIOp>(loc, bitElement, integer);
-
-        // (-bits[k] & i ) & (1 << k)
-        Value andVal = builder.create<arith::AndIOp>(loc, leftPart, rightPart);
-
-        // i ^ andVal
-        Value result = builder.create<arith::XOrIOp>(loc, integer, andVal);
-        builder.create<cudaq::cc::StoreOp>(loc, result, stackSlot);
-      });
-  return builder.create<cudaq::cc::LoadOp>(loc, stackSlot);
-}
-
 // Perform the standard type coercions when the syntactic expression from the
 // AST has arguments of different types.
 static void castToSameType(OpBuilder builder, Location loc,
@@ -382,15 +300,15 @@ static SmallVector<Value> convertKernelArgs(OpBuilder &builder, Location loc,
       continue;
     }
     if (auto ptrTy = dyn_cast<cudaq::cc::PointerType>(vTy)) {
-      if (ptrTy.getElementType() == kTy) {
+      auto eleTy = ptrTy.getElementType();
+      if (eleTy == kTy) {
         // Promote pass-by-reference to pass-by-value.
         auto load = builder.create<cudaq::cc::LoadOp>(loc, v);
         result.push_back(load);
         continue;
       }
       if (auto kPtrTy = dyn_cast<cudaq::cc::PointerType>(kTy))
-        if (auto vArrTy =
-                dyn_cast<cudaq::cc::ArrayType>(ptrTy.getElementType()))
+        if (auto vArrTy = dyn_cast<cudaq::cc::ArrayType>(eleTy))
           if (kPtrTy.getElementType() == vArrTy.getElementType()) {
             // ok, degenerate the array to a pointer to a scalar
             result.push_back(builder.create<cudaq::cc::CastOp>(loc, kPtrTy, v));
@@ -2066,8 +1984,17 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
       return true;
     }
 
-    if (funcName.equals("toInteger") || funcName.equals("to_integer"))
-      return pushValue(toIntegerImpl(builder, loc, args[0]));
+    if (funcName.equals("toInteger") || funcName.equals("to_integer")) {
+      IRBuilder irBuilder(builder.getContext());
+      if (failed(irBuilder.loadIntrinsic(module, cudaqConvertToInteger))) {
+        reportClangError(x, mangler, "cannot load cudaqConvertToInteger");
+        return false;
+      }
+      auto i64Ty = builder.getI64Type();
+      return pushValue(
+          builder.create<func::CallOp>(loc, i64Ty, cudaqConvertToInteger, args)
+              .getResult(0));
+    }
 
     if (funcName.equals("slice_vector")) {
       auto svecTy = dyn_cast<cc::SpanLikeType>(args[0].getType());
@@ -2097,13 +2024,11 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
     }
 
     if (funcName.equals("range")) {
-      auto *block = builder.getBlock();
       IRBuilder irBuilder(builder.getContext());
-      auto mod = block->getParentOp()->getParentOfType<ModuleOp>();
       auto i64Ty = builder.getI64Type(); // element type
       if (funcArity == 1) {
         [[maybe_unused]] auto result =
-            irBuilder.loadIntrinsic(mod, setCudaqRangeVector);
+            irBuilder.loadIntrinsic(module, setCudaqRangeVector);
         assert(succeeded(result) && "loading intrinsic should never fail");
         auto upVal = args[0];
         auto upper = builder.create<cc::CastOp>(loc, i64Ty, upVal,
@@ -2116,7 +2041,7 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
       }
       assert(funcArity == 3);
       [[maybe_unused]] auto result =
-          irBuilder.loadIntrinsic(mod, setCudaqRangeVectorTriple);
+          irBuilder.loadIntrinsic(module, setCudaqRangeVectorTriple);
       assert(succeeded(result) && "loading intrinsic should never fail");
       Value start = builder.create<cc::CastOp>(loc, i64Ty, args[0],
                                                cc::CastOpMode::Signed);
@@ -2134,6 +2059,32 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
                                        ValueRange{buffer, start, stop, step});
       return pushValue(call.getResult(0));
     }
+
+    if (funcName == "device_call") {
+      // Generate the high-level DeviceCallOp.
+      bool hasResult = false;
+      auto tys = [&]() -> SmallVector<Type> {
+        if (typeStack.empty())
+          return {};
+        hasResult = true;
+        return {peekType()};
+      }();
+      auto funcConst = args[0].getDefiningOp<func::ConstantOp>();
+      auto symbol = funcConst.getValue();
+      auto devFunc = module.lookupSymbol<func::FuncOp>(symbol);
+      devFunc->setAttr(cudaq::deviceCallAttrName, builder.getUnitAttr());
+      auto callArgs = convertKernelArgs(
+          builder, loc, 1, args,
+          cast<FunctionType>(funcConst.getType()).getInputs());
+      auto devCall =
+          builder.create<cc::DeviceCallOp>(loc, tys, symbol, callArgs);
+      if (!hasResult)
+        return true;
+      return pushValue(devCall.getResult(0));
+    }
+
+    // Finally, flag the call as an error except anything in cudaq::solvers or
+    // cudaq::qec.
     if (!isInNamespace(func, "solvers") && !isInNamespace(func, "qec")) {
       TODO_loc(loc, "unknown function, " + funcName + ", in cudaq namespace");
     }
