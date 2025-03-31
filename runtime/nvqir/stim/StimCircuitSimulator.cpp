@@ -309,13 +309,13 @@ protected:
 
   void applyNoise(const cudaq::kraus_channel &channel,
                   const std::vector<std::size_t> &qubits) override {
+    flushGateQueue();
     std::vector<std::uint32_t> stimTargets(qubits.begin(), qubits.end());
     applyNoise(channel, stimTargets);
   }
 
   void applyNoise(const cudaq::kraus_channel &channel,
                   const std::vector<std::uint32_t> &qubits) {
-    flushGateQueue();
     cudaq::info("[stim] apply kraus channel {}, is_pcm_mode = {}",
                 channel.get_type_name(), is_pcm_mode);
 

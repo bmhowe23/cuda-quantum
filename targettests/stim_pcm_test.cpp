@@ -13,9 +13,6 @@
 
 #include "cudaq.h"
 #include <cudaq/algorithms/draw.h>
-#include <set>
-#include <iostream>
-#include "cudaq/qec/noise_model.h"
 
 struct stress_test {
   void operator()(int num_qubits, int num_rounds) __qpu__ {
@@ -41,12 +38,12 @@ int main(int argc, char *argv[]) {
   cudaq::bit_flip_channel bf(noise_bf_prob);
   for (std::size_t i = 0; i < 100; i++)
     noise.add_channel("mz", {i}, bf);
-  noise.add_all_qubit_channel("x", cudaq::qec::two_qubit_bitflip(noise_bf_prob),
+  noise.add_all_qubit_channel("x", cudaq::depolarization2(noise_bf_prob),
                               /*num_controls=*/1);
   cudaq::set_noise(noise);
-  int num_qubits = 1000;
-  int num_rounds = 1000;
-  int num_shots = 1000;
+  int num_qubits = 10;
+  int num_rounds = 10;
+  int num_shots = 10;
   if (auto *ch = getenv("BMH_NUM_QUBITS"))
     num_qubits = atoi(ch);
   if (auto *ch = getenv("BMH_NUM_ROUNDS"))
