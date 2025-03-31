@@ -83,8 +83,8 @@ protected:
 
       // Generate the entries for p/15: IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY,
       // YZ, ZI, ZX, ZY, ZZ
-      std::vector<bool> x_err{false, true, true, false}; // IXYZ errors (X)
-      std::vector<bool> z_err{false, false, true, true}; // IXYZ errors (Z)
+      std::vector<bool> x_err{false, true, true, false}; // X errors for IXYZ
+      std::vector<bool> z_err{false, false, true, true}; // Z errors for IXYZ
       for (int q1_err = 0; q1_err < 4; q1_err++) {       // qubit 1 loop
         for (int q2_err = 0; q2_err < 4; q2_err++) {     // qubit 2 loop
           if (q1_err == 0 && q2_err == 0)                // skip II
@@ -97,11 +97,36 @@ protected:
       return ret;
     }
     case cudaq::noise_model_type::pauli1:
-      // TODO - implement
-      return StimNoiseType{.stim_name = "PAULI_CHANNEL_1"};
-    case cudaq::noise_model_type::pauli2:
-      // TODO - implement
-      return StimNoiseType{.stim_name = "PAULI_CHANNEL_2"};
+      // Either X error, Y error, or Z error happens, each with its own
+      // probability that is specified in the 3 channel parameters.
+      assert(channel.parameters.size() == cudaq::pauli1::num_parameters);
+      assert(channel.parameters.size() == 3);
+      return StimNoiseType{.stim_name = "PAULI_CHANNEL_1",
+                           .flips_x = {true, true, false},
+                           .flips_z = {false, true, true},
+                           .params = channel.parameters};
+    case cudaq::noise_model_type::pauli2: {
+      assert(channel.parameters.size() == cudaq::pauli2::num_parameters);
+      assert(channel.parameters.size() == 15);
+      StimNoiseType ret{.stim_name = "PAULI_CHANNEL_2",
+                        .params = channel.parameters,
+                        .num_targets = 2};
+
+      // Generate the entries for: IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY, YZ,
+      // ZI, ZX, ZY, ZZ
+      std::vector<bool> x_err{false, true, true, false}; // X errors for IXYZ
+      std::vector<bool> z_err{false, false, true, true}; // Z errors for IXYZ
+      for (int q1_err = 0; q1_err < 4; q1_err++) {       // qubit 1 loop
+        for (int q2_err = 0; q2_err < 4; q2_err++) {     // qubit 2 loop
+          if (q1_err == 0 && q2_err == 0)                // skip II
+            continue;
+          // Push back the values for the two qubits, for both x and z errors
+          ret.flips_x.insert(ret.flips_x.end(), {x_err[q1_err], x_err[q2_err]});
+          ret.flips_z.insert(ret.flips_z.end(), {z_err[q1_err], z_err[q2_err]});
+        }
+      }
+      return ret;
+    }
     case cudaq::noise_model_type::amplitude_damping_channel:
     case cudaq::noise_model_type::amplitude_damping:
     case cudaq::noise_model_type::phase_damping:

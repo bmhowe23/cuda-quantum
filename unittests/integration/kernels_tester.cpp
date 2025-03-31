@@ -209,7 +209,8 @@ CUDAQ_TEST(KernelsTester, pcmTester) {
   cudaq::bit_flip_channel bf(noise_bf_prob);
   for (std::size_t i = 0; i < num_qubits; i++)
     noise.add_channel("mz", {i}, bf);
-  // noise.add_all_qubit_channel("x", cudaq::qec::two_qubit_bitflip(noise_bf_prob),
+  // noise.add_all_qubit_channel("x",
+  // cudaq::qec::two_qubit_bitflip(noise_bf_prob),
   //                             /*num_controls=*/1);
   cudaq::set_noise(noise);
 
@@ -236,7 +237,7 @@ CUDAQ_TEST(KernelsTester, pcmTester) {
   printf("Columns of PCM:\n");
   for (int col = 0; auto x : pcm_as_strings) {
     // For this multi_round_ghz, we expect a 15x15 identity matrix.
-    std::string expected_string(num_qubits*num_rounds, '0');
+    std::string expected_string(num_qubits * num_rounds, '0');
     expected_string[col] = '1';
     EXPECT_EQ(expected_string, x);
     auto p = ctx_pcm.pcm_probabilities.value()[col];
