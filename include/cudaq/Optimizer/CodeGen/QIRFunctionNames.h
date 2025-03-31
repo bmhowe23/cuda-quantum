@@ -94,4 +94,20 @@ static constexpr const char QIRRecordOutput[] =
 static constexpr const char QIRClearResultMaps[] =
     "__quantum__rt__clear_result_maps";
 
+/// Used to specify the type of the data elements in the `QISApplyKrausChannel`
+/// call. (`float` or `double`)
+enum class KrausChannelDataKind { FloatKind, DoubleKind };
+
+static constexpr const char QISApplyKrausChannel[] =
+    "__quantum__qis__apply_kraus_channel_generalized";
+
+/// Since apply noise is actually a call back to `C++` code, the `QIR` data type
+/// `Array` of `Qubit*` must be converted into a `cudaq::qvector`, which is
+/// presently a `std::vector<cudaq::qubit>` but with an extremely restricted
+/// interface.
+static constexpr const char QISConvertArrayToStdvec[] =
+    "__quantum__qis__convert_array_to_stdvector";
+static constexpr const char QISFreeConvertedStdvec[] =
+    "__quantum__qis__free_converted_stdvector";
+
 } // namespace cudaq::opt

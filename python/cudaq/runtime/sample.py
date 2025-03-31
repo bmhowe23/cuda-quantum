@@ -73,10 +73,11 @@ Returns:
     if explicit_measurements:
         if not cudaq_runtime.supportsExplicitMeasurements():
             raise RuntimeError(
-                "Explicit measurement option is not supported on this target.")
+                "The sampling option `explicit_measurements` is not supported on this target."
+            )
         if has_conditionals_on_measure_result:
             raise RuntimeError(
-                "Explicit measurement option is not supported on kernel with conditional logic on a measurement result."
+                "The sampling option `explicit_measurements` is not supported on kernel with conditional logic on a measurement result."
             )
 
     if noise_model != None:
@@ -99,8 +100,18 @@ Returns:
     while counts.get_total_shots() < shots_count:
         kernel(*args)
         cudaq_runtime.resetExecutionContext()
+        if counts.get_total_shots() == 0 and ctx.result.get_total_shots(
+        ) == shots_count:
+            # Early return for case where all shots were gathered in the first
+            # time through this loop. This avoids an additional copy.
+            cudaq_runtime.unset_noise()
+            return ctx.result
         counts += ctx.result
         if counts.get_total_shots() == 0:
+            if explicit_measurements is True:
+                raise RuntimeError(
+                    "The sampling option `explicit_measurements` is not " +
+                    "supported on a kernel without any measurement operation.")
             print("WARNING: this kernel invocation produced 0 shots worth " +
                   "of results when executed. Exiting shot loop to avoid " +
                   "infinite loop.")

@@ -126,7 +126,7 @@ KernelBuilderType convertArgumentTypeToMLIR(std::vector<cudaq::pauli_word> &) {
 
 KernelBuilderType convertArgumentTypeToMLIR(cudaq::state *&) {
   return KernelBuilderType([](MLIRContext *ctx) {
-    return cudaq::cc::PointerType::get(cudaq::cc::StateType::get(ctx));
+    return cudaq::cc::PointerType::get(quake::StateType::get(ctx));
   });
 }
 
@@ -212,12 +212,9 @@ void exp_pauli(ImplicitLocOpBuilder &builder, const QuakeValue &theta,
                              "type as first argument.");
   cudaq::info("kernel_builder apply exp_pauli {}", pauliWord);
 
-  auto strLitTy = cc::PointerType::get(cc::ArrayType::get(
-      builder.getContext(), builder.getI8Type(), pauliWord.size() + 1));
-  Value stringLiteral = builder.create<cc::CreateStringLiteralOp>(
-      strLitTy, builder.getStringAttr(pauliWord));
-  SmallVector<Value> args{thetaVal, qubitsVal, stringLiteral};
-  builder.create<quake::ExpPauliOp>(TypeRange{}, args);
+  auto stringLiteral = builder.getStringAttr(pauliWord);
+  builder.create<quake::ExpPauliOp>(ValueRange{thetaVal}, ValueRange{},
+                                    ValueRange{qubitsVal}, stringLiteral);
 }
 
 /// @brief Search the given `FuncOp` for all `CallOps` recursively.
@@ -510,7 +507,7 @@ QuakeValue qalloc(ImplicitLocOpBuilder &builder, QuakeValue &sizeOrVec) {
 
   if (auto statePtrTy = dyn_cast<cc::PointerType>(type)) {
     auto eleTy = statePtrTy.getElementType();
-    if (auto stateTy = dyn_cast<cc::StateType>(eleTy)) {
+    if (auto stateTy = dyn_cast<quake::StateType>(eleTy)) {
       // get the number of qubits
       auto numQubits = builder.create<quake::GetNumberOfQubitsOp>(
           builder.getI64Type(), value);
@@ -648,7 +645,7 @@ QuakeValue qalloc(ImplicitLocOpBuilder &builder,
 QuakeValue qalloc(mlir::ImplicitLocOpBuilder &builder, cudaq::state *state,
                   StateVectorStorage &stateVectorStorage) {
   auto *context = builder.getContext();
-  auto statePtrTy = cudaq::cc::PointerType::get(cc::StateType::get(context));
+  auto statePtrTy = cudaq::cc::PointerType::get(quake::StateType::get(context));
   auto statePtr = builder.create<cc::CastOp>(
       builder.getLoc(), statePtrTy,
       builder.create<arith::ConstantIntOp>(

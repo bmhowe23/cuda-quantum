@@ -112,6 +112,11 @@ private:
   /// here so we don't have to keep recomputing it.
   std::size_t totalShots = 0;
 
+  std::pair<bool, const ExecutionResult &>
+  try_retrieve_result(const std::string &registerName) const;
+  const ExecutionResult &retrieve_result(const std::string &registerName) const;
+  ExecutionResult &retrieve_result(const std::string &registerName);
+
 public:
   /// @brief Nullary constructor
   sample_result() = default;
@@ -131,7 +136,13 @@ public:
   sample_result(double preComputedExp, std::vector<ExecutionResult> &results);
 
   /// @brief Copy Constructor
-  sample_result(const sample_result &);
+  sample_result(const sample_result &) = default;
+
+  /// @brief Move constructor
+  sample_result(sample_result &&) = default;
+
+  /// @brief Move assignment constructor
+  sample_result &operator=(sample_result &&counts) = default;
 
   /// @brief The destructor
   ~sample_result() = default;
@@ -156,8 +167,8 @@ public:
   /// @brief Set this sample_result equal to the provided one
   /// @param counts
   /// @return
-  sample_result &operator=(sample_result &counts);
-  sample_result &operator=(const sample_result &counts);
+  sample_result &operator=(sample_result &counts) = default;
+  sample_result &operator=(const sample_result &counts) = default;
 
   /// @brief Append all the data from other to this sample_result.
   /// Merge when necessary.
@@ -184,10 +195,6 @@ public:
   /// @return
   double
   expectation(const std::string_view registerName = GlobalRegisterName) const;
-  /// @brief Deprecated: Return the expected value <Z...Z>
-  [[deprecated("`exp_val_z()` is deprecated. Use `expectation()` with the same "
-               "argument structure.")]] double
-  exp_val_z(const std::string_view registerName = GlobalRegisterName);
 
   /// @brief Return the probability of observing the given bit string
   /// @param bitString
@@ -200,13 +207,14 @@ public:
   /// @param registerName
   /// @return
   std::string
-  most_probable(const std::string_view registerName = GlobalRegisterName);
+  most_probable(const std::string_view registerName = GlobalRegisterName) const;
 
   /// @brief Return the number of times the given bitstring was observed
   /// @param bitString
   /// @return
-  std::size_t count(std::string_view bitString,
-                    const std::string_view registerName = GlobalRegisterName);
+  std::size_t
+  count(std::string_view bitString,
+        const std::string_view registerName = GlobalRegisterName) const;
 
   std::vector<std::string> sequential_data(
       const std::string_view registerName = GlobalRegisterName) const;
@@ -214,7 +222,7 @@ public:
   /// @brief Return the number of observed bit strings
   /// @return
   std::size_t
-  size(const std::string_view registerName = GlobalRegisterName) noexcept;
+  size(const std::string_view registerName = GlobalRegisterName) const noexcept;
 
   /// @brief Dump this sample_result to standard out.
   void dump() const;
@@ -239,7 +247,7 @@ public:
   /// @return
   sample_result
   get_marginal(const std::vector<std::size_t> &&marginalIndices,
-               const std::string_view registerName = GlobalRegisterName) {
+               const std::string_view registerName = GlobalRegisterName) const {
     return get_marginal(marginalIndices, registerName);
   }
 
@@ -250,7 +258,7 @@ public:
   /// @return
   sample_result
   get_marginal(const std::vector<std::size_t> &marginalIndices,
-               const std::string_view registerName = GlobalRegisterName);
+               const std::string_view registerName = GlobalRegisterName) const;
 
   /// @brief Reorder the bits in an ExecutionResult
   /// @param index Vector of indices such that

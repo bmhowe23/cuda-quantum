@@ -11,17 +11,6 @@
 #include "cutensornet.h"
 #include "tensornet_spin_op.h"
 
-namespace {
-const std::vector<std::complex<double>> matPauliI = {
-    {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}};
-const std::vector<std::complex<double>> matPauliX{
-    {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
-const std::vector<std::complex<double>> matPauliY{
-    {0.0, 0.0}, {0.0, -1.0}, {0.0, 1.0}, {0.0, 0.0}};
-const std::vector<std::complex<double>> matPauliZ{
-    {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {-1.0, 0.0}};
-} // namespace
-
 namespace nvqir {
 
 SimulatorTensorNetBase::SimulatorTensorNetBase()
@@ -148,66 +137,7 @@ void SimulatorTensorNetBase::applyGate(const GateApplicationTask &task) {
   }
 }
 
-// Helper to check whether a matrix is a scaled unitary matrix, i.e., `k * U`
-// where U is a unitary matrix. If so, it also returns the `k` factor.
-// Otherwise, return a nullopt.
-template <typename T>
-std::optional<double> isScaledUnitary(const std::vector<std::complex<T>> &mat,
-                                      double eps) {
-  typedef Eigen::Matrix<std::complex<T>, Eigen::Dynamic, Eigen::Dynamic,
-                        Eigen::RowMajor>
-      RowMajorMatTy;
-  const int dim = std::log2(mat.size());
-  Eigen::Map<const RowMajorMatTy> kMat(mat.data(), dim, dim);
-  if (kMat.isZero())
-    return std::nullopt;
-  // Check that (K_dag * K) is a scaled identity matrix
-  // i.e., the K matrix is a scaled unitary.
-  auto kdK = kMat.adjoint() * kMat;
-  if (!kdK.isDiagonal())
-    return std::nullopt;
-  // First element
-  std::complex<T> val = kdK(0, 0);
-  if (std::abs(val) > eps && std::abs(val.imag()) < eps) {
-    auto scaledKdK = (std::complex<T>{1.0} / val) * kdK;
-    if (scaledKdK.isIdentity())
-      return val.real();
-  }
-  return std::nullopt;
-}
-
-std::optional<std::pair<
-    std::vector<double>,
-    std::vector<std::vector<std::complex<
-        double>>>>> static computeUnitaryMixture(const std::
-                                                     vector<std::vector<
-                                                         std::complex<double>>>
-                                                         &krausOps,
-                                                 double tol = 1e-6) {
-  std::vector<double> probs;
-  std::vector<std::vector<std::complex<double>>> mats;
-  const auto scaleMat = [](const std::vector<std::complex<double>> &mat,
-                           double scaleFactor) {
-    std::vector<std::complex<double>> scaledMat = mat;
-    for (auto &x : scaledMat)
-      x /= scaleFactor;
-    return scaledMat;
-  };
-  for (const auto &op : krausOps) {
-    const auto scaledFactor = isScaledUnitary(op, tol);
-    if (!scaledFactor.has_value())
-      return std::nullopt;
-    probs.emplace_back(scaledFactor.value());
-    mats.emplace_back(scaleMat(op, scaledFactor.value()));
-  }
-
-  if (std::abs(1.0 - std::reduce(probs.begin(), probs.end())) > tol)
-    return std::nullopt;
-
-  return std::make_pair(probs, mats);
-}
-
-// Helper to look up a device memory pointer from a  cache.
+// Helper to look up a device memory pointer from a cache.
 // If not found, allocate a new device memory buffer and put it to the cache.
 static void *
 getOrCacheMat(const std::string &key,
@@ -227,86 +157,67 @@ void SimulatorTensorNetBase::applyKrausChannel(
     const std::vector<int32_t> &qubits,
     const cudaq::kraus_channel &krausChannel) {
   LOG_API_TIME();
-  switch (krausChannel.noise_type) {
-  case cudaq::noise_model_type::depolarization_channel: {
-    if (krausChannel.parameters.size() != 1)
+  if (krausChannel.is_unitary_mixture()) {
+    std::vector<void *> channelMats;
+    for (const auto &mat : krausChannel.unitary_ops)
+      channelMats.emplace_back(
+          getOrCacheMat("ScaledUnitary_" + std::to_string(vecComplexHash(mat)),
+                        mat, m_gateDeviceMemCache));
+    m_state->applyUnitaryChannel(qubits, channelMats,
+                                 krausChannel.probabilities);
+  } else {
+    if (!canHandleGeneralNoiseChannel())
       throw std::runtime_error(
-          fmt::format("Invalid parameters for a depolarization channel. "
-                      "Expecting 1 parameter, got {}.",
-                      krausChannel.parameters.size()));
-    const std::vector<void *> channelMats{
-        getOrCacheMat("PauliI", matPauliI, m_gateDeviceMemCache),
-        getOrCacheMat("PauliX", matPauliX, m_gateDeviceMemCache),
-        getOrCacheMat("PauliY", matPauliY, m_gateDeviceMemCache),
-        getOrCacheMat("PauliZ", matPauliZ, m_gateDeviceMemCache)};
-    const double p = krausChannel.parameters[0];
-    const std::vector<double> probabilities = {1 - p, p / 3., p / 3., p / 3.};
-    m_state->applyUnitaryChannel(qubits, channelMats, probabilities);
-    break;
-  }
-  case cudaq::noise_model_type::bit_flip_channel: {
-    if (krausChannel.parameters.size() != 1)
-      throw std::runtime_error(
-          fmt::format("Invalid parameters for a bit-flip channel. "
-                      "Expecting 1 parameter, got {}.",
-                      krausChannel.parameters.size()));
+          "General noise channels are not supported on simulator " + name());
 
-    const std::vector<void *> channelMats{
-        getOrCacheMat("PauliI", matPauliI, m_gateDeviceMemCache),
-        getOrCacheMat("PauliX", matPauliX, m_gateDeviceMemCache)};
-    const double p = krausChannel.parameters[0];
-    const std::vector<double> probabilities = {1 - p, p};
-    m_state->applyUnitaryChannel(qubits, channelMats, probabilities);
-    break;
-  }
-  case cudaq::noise_model_type::phase_flip_channel: {
-    if (krausChannel.parameters.size() != 1)
-      throw std::runtime_error(
-          fmt::format("Invalid parameters for a phase-flip channel. "
-                      "Expecting 1 parameter, got {}.",
-                      krausChannel.parameters.size()));
-
-    const std::vector<void *> channelMats{
-        getOrCacheMat("PauliI", matPauliI, m_gateDeviceMemCache),
-        getOrCacheMat("PauliZ", matPauliZ, m_gateDeviceMemCache)};
-    const double p = krausChannel.parameters[0];
-    const std::vector<double> probabilities = {1 - p, p};
-    m_state->applyUnitaryChannel(qubits, channelMats, probabilities);
-    break;
-  }
-  case cudaq::noise_model_type::amplitude_damping_channel: {
-    if (krausChannel.parameters.size() != 1)
-      throw std::runtime_error(
-          fmt::format("Invalid parameters for a amplitude damping channel. "
-                      "Expecting 1 parameter, got {}.",
-                      krausChannel.parameters.size()));
-    if (krausChannel.parameters[0] != 0.0)
-      throw std::runtime_error("Non-unitary noise channels are not supported.");
-    break;
-  }
-  case cudaq::noise_model_type::unknown: {
-    std::vector<std::vector<std::complex<double>>> mats;
-    for (const auto &op : krausChannel.get_ops())
-      mats.emplace_back(op.data);
-    auto asUnitaryMixture = computeUnitaryMixture(mats);
-    if (asUnitaryMixture.has_value()) {
-      auto &[probabilities, unitaries] = asUnitaryMixture.value();
-      std::vector<void *> channelMats;
-      for (const auto &mat : unitaries)
-        channelMats.emplace_back(getOrCacheMat(
-            "ScaledUnitary_" + std::to_string(vecComplexHash(mat)), mat,
-            m_gateDeviceMemCache));
-      m_state->applyUnitaryChannel(qubits, channelMats, probabilities);
-    } else {
-      throw std::runtime_error("Non-unitary noise channels are not supported.");
+    std::vector<void *> channelMats;
+    for (const auto &op : krausChannel.get_ops()) {
+      const std::string cacheKey = fmt::format(
+          "GeneralKrausMat_{}", std::to_string(vecComplexHash(op.data)));
+      channelMats.emplace_back(
+          getOrCacheMat(cacheKey, op.data, m_gateDeviceMemCache));
     }
-    break;
+    m_state->applyGeneralChannel(qubits, channelMats);
   }
+}
+
+bool SimulatorTensorNetBase::isValidNoiseChannel(
+    const cudaq::noise_model_type &type) const {
+  switch (type) {
+  case cudaq::noise_model_type::depolarization_channel:
+  case cudaq::noise_model_type::bit_flip_channel:
+  case cudaq::noise_model_type::phase_flip_channel:
+  case cudaq::noise_model_type::x_error:
+  case cudaq::noise_model_type::y_error:
+  case cudaq::noise_model_type::z_error:
+  case cudaq::noise_model_type::pauli1:
+  case cudaq::noise_model_type::pauli2:
+  case cudaq::noise_model_type::depolarization1:
+  case cudaq::noise_model_type::depolarization2:
+  case cudaq::noise_model_type::phase_damping:
+  case cudaq::noise_model_type::unknown: // may be unitary, so return true
+    return true;
+  // These are explicitly non-unitary
+  case cudaq::noise_model_type::amplitude_damping_channel:
+  case cudaq::noise_model_type::amplitude_damping:
   default:
-    throw std::runtime_error(
-        "Unsupported noise model type: " +
-        std::to_string(static_cast<int>(krausChannel.noise_type)));
+    return canHandleGeneralNoiseChannel();
   }
+}
+
+void SimulatorTensorNetBase::applyNoise(
+    const cudaq::kraus_channel &channel,
+    const std::vector<std::size_t> &targets) {
+  LOG_API_TIME();
+
+  // Apply all prior gates before applying noise.
+  std::vector<int32_t> qubits{targets.begin(), targets.end()};
+  cudaq::info(
+      "[SimulatorTensorNetBase] Applying kraus channel {} on qubits: {}",
+      cudaq::get_noise_model_type_name(channel.noise_type), qubits);
+
+  flushGateQueue();
+  applyKrausChannel(qubits, channel);
 }
 
 void SimulatorTensorNetBase::applyNoiseChannel(
@@ -433,10 +344,9 @@ SimulatorTensorNetBase::sample(const std::vector<std::size_t> &measuredBits,
   LOG_API_TIME();
   std::vector<int32_t> measuredBitIds(measuredBits.begin(), measuredBits.end());
   if (shots < 1) {
-    cudaq::spin_op::spin_op_term allZTerm(2 * m_state->getNumQubits(), 0);
-    for (const auto &m : measuredBits)
-      allZTerm.at(m_state->getNumQubits() + m) = 1;
-    cudaq::spin_op allZ(allZTerm, 1.0);
+    auto allZ = cudaq::spin_op::identity();
+    for (std::size_t t = 0; t < m_state->getNumQubits(); ++t)
+      allZ *= cudaq::spin_op::z(t);
     // Just compute the expected value on <Z...Z>
     return cudaq::ExecutionResult({}, observe(allZ).expectation());
   }
@@ -490,6 +400,7 @@ bool SimulatorTensorNetBase::canHandleObserve() {
 /// @brief Evaluate the expectation value of a given observable
 cudaq::observe_result
 SimulatorTensorNetBase::observe(const cudaq::spin_op &ham) {
+  assert(cudaq::spin_op::canonicalize(ham) == ham);
   LOG_API_TIME();
   prepareQubitTensorState();
   if (!m_reuseContractionPathObserve) {
@@ -502,41 +413,28 @@ SimulatorTensorNetBase::observe(const cudaq::spin_op &ham) {
     expVal += spinOp.getIdentityTermOffset();
     return cudaq::observe_result(expVal.real(), ham,
                                  cudaq::sample_result(cudaq::ExecutionResult(
-                                     {}, ham.to_string(false), expVal.real())));
+                                     {}, ham.to_string(), expVal.real())));
   }
 
   std::vector<std::string> termStrs;
-  std::vector<cudaq::spin_op::spin_op_term> terms;
-  std::vector<std::complex<double>> coeffs;
+  std::vector<cudaq::spin_op_term> prods;
   termStrs.reserve(ham.num_terms());
-  terms.reserve(ham.num_terms());
-  coeffs.reserve(ham.num_terms());
-
-  // Note: as the spin_op terms are stored as an unordered map, we need to
-  // iterate in one loop to collect all the data (string, symplectic data, and
-  // coefficient).
-  ham.for_each_term([&](cudaq::spin_op &term) {
-    termStrs.emplace_back(term.to_string(false));
-    auto [symplecticRep, coeff] = term.get_raw_data();
-    if (symplecticRep.size() != 1 || coeff.size() != 1)
-      throw std::runtime_error(fmt::format(
-          "Unexpected data encountered when iterating spin operator terms: "
-          "expecting a single term, got {} terms.",
-          symplecticRep.size()));
-    terms.emplace_back(symplecticRep[0]);
-    coeffs.emplace_back(coeff[0]);
-  });
+  prods.reserve(ham.num_terms());
+  for (auto &&term : ham) {
+    termStrs.emplace_back(term.get_term_id());
+    prods.push_back(std::move(term));
+  }
 
   // Compute the expectation value for all terms
   const auto termExpVals = m_state->computeExpVals(
-      terms, this->executionContext->numberTrajectories);
+      prods, this->executionContext->numberTrajectories);
   std::complex<double> expVal = 0.0;
   // Construct per-term data in the final observe_result
   std::vector<cudaq::ExecutionResult> results;
-  results.reserve(terms.size());
+  results.reserve(prods.size());
 
-  for (std::size_t i = 0; i < terms.size(); ++i) {
-    expVal += (coeffs[i] * termExpVals[i]);
+  for (std::size_t i = 0; i < prods.size(); ++i) {
+    expVal += termExpVals[i];
     results.emplace_back(
         cudaq::ExecutionResult({}, termStrs[i], termExpVals[i].real()));
   }

@@ -47,12 +47,12 @@ runSampling(KernelFunctor &&wrappedKernel, quantum_platform &platform,
       cudaq::kernelHasConditionalFeedback(kernelName);
   if (explicitMeasurements) {
     if (!platform.supports_explicit_measurements())
-      throw std::runtime_error(
-          "Explicit measurement option is not supported on this target.");
+      throw std::runtime_error("The sampling option `explicit_measurements` is "
+                               "not supported on this target.");
     if (hasConditionalFeebdback)
       throw std::runtime_error(
-          "Explicit measurement option is not supported on kernel with "
-          "conditional logic on a measurement result.");
+          "The sampling option `explicit_measurements` is not supported on a "
+          "kernel with conditional logic on a measurement result.");
   }
   // Create the execution context.
   auto ctx = std::make_unique<ExecutionContext>("sample", shots);
@@ -96,7 +96,7 @@ runSampling(KernelFunctor &&wrappedKernel, quantum_platform &platform,
   platform.set_exec_ctx(ctx.get(), qpu_id);
   platform.set_current_qpu(qpu_id);
 
-  // Loop until all shots are returned. FIXME: handle efficiency later.
+  // Loop until all shots are returned.
   cudaq::sample_result counts;
   while (counts.get_total_shots() < static_cast<std::size_t>(shots)) {
     wrappedKernel();
@@ -105,8 +105,22 @@ runSampling(KernelFunctor &&wrappedKernel, quantum_platform &platform,
       return std::nullopt;
     }
     platform.reset_exec_ctx(qpu_id);
-    counts += ctx->result;
+    if (counts.get_total_shots() == 0)
+      counts = std::move(ctx->result); // optimize for first iteration
+    else
+      counts += ctx->result;
+
     ctx->result.clear();
+    if (counts.get_total_shots() == 0) {
+      if (explicitMeasurements)
+        throw std::runtime_error(
+            "The sampling option `explicit_measurements` is not supported on a "
+            "kernel without any measurement operation.");
+      printf("WARNING: this kernel invocation produced 0 shots worth "
+             "of results when executed. Exiting shot loop to avoid "
+             "infinite loop.");
+      break;
+    }
     // Reset the context for the next round,
     // don't need to reset on the last exec
     if (counts.get_total_shots() < static_cast<std::size_t>(shots)) {

@@ -19,6 +19,14 @@ using namespace cudaq;
 
 namespace nvqir {
 
+struct StimNoiseType {
+  std::string stim_name;
+  std::vector<bool> is_x;
+  std::vector<bool> is_z;
+  std::vector<double> params;
+  int num_targets = 1;
+};
+
 /// @brief The StimCircuitSimulator implements the CircuitSimulator
 /// base class to provide a simulator delegating to the Stim library from
 /// https://github.com/quantumlib/Stim.
@@ -47,6 +55,62 @@ protected:
   /// @brief Whether or not the execution context name is "pcm" (value is cached
   /// for speed)
   bool is_pcm_mode = false;
+
+  std::optional<StimNoiseType>
+  isValidStimNoiseChannel(const kraus_channel &channel) const {
+
+    // Check the old way first
+    switch (channel.noise_type) {
+    case cudaq::noise_model_type::bit_flip_channel:
+    case cudaq::noise_model_type::x_error:
+      return StimNoiseType{"X_ERROR", {true}, {false}, {channel.parameters[0]}};
+    case cudaq::noise_model_type::y_error:
+      return StimNoiseType{"Y_ERROR", {true}, {true}, {channel.parameters[0]}};
+    case cudaq::noise_model_type::phase_flip_channel:
+    case cudaq::noise_model_type::z_error:
+      return StimNoiseType{"Z_ERROR", {false}, {true}, {channel.parameters[0]}};
+    case cudaq::noise_model_type::depolarization_channel:
+    case cudaq::noise_model_type::depolarization1:
+      return StimNoiseType{"DEPOLARIZE1",
+                           {true, true, false},
+                           {false, true, true},
+                           std::vector<double>(channel.parameters[0] / 3.0, 3)};
+    case cudaq::noise_model_type::depolarization2: {
+      StimNoiseType ret{
+          .stim_name = "DEPOLARIZE2",
+          .params = std::vector<double>(15, channel.parameters[0] / 15.0),
+          .num_targets = 2};
+
+      // Generate the entries for p/15: IX, IY, IZ, XI, XX, XY, XZ, YI, YX, YY,
+      // YZ, ZI, ZX, ZY, ZZ
+      std::vector<bool> x_err{false, true, true, false}; // IXYZ errors (X)
+      std::vector<bool> z_err{false, false, true, true}; // IXYZ errors (Z)
+      for (int q1_err = 0; q1_err < 4; q1_err++) {       // qubit 1 loop
+        for (int q2_err = 0; q2_err < 4; q2_err++) {     // qubit 2 loop
+          if (q1_err == 0 && q2_err == 0)                // skip II
+            continue;
+          // Push back the values for the two qubits, for both x and z errors
+          ret.is_x.insert(ret.is_x.end(), {x_err[q1_err], x_err[q2_err]});
+          ret.is_z.insert(ret.is_z.end(), {z_err[q1_err], z_err[q2_err]});
+        }
+      }
+      return ret;
+    }
+    case cudaq::noise_model_type::pauli1:
+      // TODO - implement
+      return StimNoiseType{.stim_name = "PAULI_CHANNEL_1"};
+    case cudaq::noise_model_type::pauli2:
+      // TODO - implement
+      return StimNoiseType{.stim_name = "PAULI_CHANNEL_2"};
+    case cudaq::noise_model_type::amplitude_damping_channel:
+    case cudaq::noise_model_type::amplitude_damping:
+    case cudaq::noise_model_type::phase_damping:
+    case cudaq::noise_model_type::unknown:
+      return std::nullopt;
+    }
+
+    return std::nullopt;
+  }
 
   /// @brief Grow the state vector by one qubit.
   void addQubitToState() override { addQubitsToState(1); }
@@ -207,52 +271,79 @@ protected:
     cudaq::info("Applying {} kraus channels to qubits {}", krausChannels.size(),
                 stimTargets);
 
+    // TODO
+    // stim::Circuit noiseOps;
+    // for (auto &channel : krausChannels) {
+    //   if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel) {
+    //     if (!is_pcm_mode)
+    //       noiseOps.safe_append_ua("X_ERROR", stimTargets,
+    //                               channel.parameters[0]);
+    //     else if (pcm_err_count < sampleSim->batch_size) {
+    //       for (auto q : stimTargets)
+    //         sampleSim->x_table[q][pcm_err_count] ^= 1;
+    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
+    //     }
+    //     pcm_err_count++;
+    //   } else if (channel.noise_type ==
+    //              cudaq::noise_model_type::phase_flip_channel) {
+    //     if (!is_pcm_mode)
+    //       noiseOps.safe_append_ua("Z_ERROR", stimTargets,
+    //                               channel.parameters[0]);
+    //     else if (pcm_err_count < sampleSim->batch_size) {
+    //       for (auto q : stimTargets)
+    //         sampleSim->z_table[q][pcm_err_count] ^= 1;
+    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
+    //     }
+    //     pcm_err_count++;
+    //   } else if (channel.noise_type ==
+    //              cudaq::noise_model_type::depolarization_channel) {
+    //     if (!is_pcm_mode)
+    //       noiseOps.safe_append_ua("DEPOLARIZE1", stimTargets,
+    //                               channel.parameters[0]);
+    //     else if (pcm_err_count < sampleSim->batch_size) {
+    //       for (auto q : stimTargets) {
+    //         sampleSim->x_table[q][pcm_err_count] ^= 1;
+    //         sampleSim->z_table[q][pcm_err_count] ^= 1;
+    //       }
+    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
+    //     }
+    //     pcm_err_count++;
+    //   }
+    //   cudaq::info("Applying / application is on pcm_err_count = {}",
+    //               pcm_err_count);
+    // }
+    // if (is_pcm_mode) {
+    //   // Don't apply anything else to sampleSim because that was already
+    //   // manipulated above.
+    // } else {
+    //   // Only apply the noise operations to the sample simulator (not the
+    //   // Tableau simulator).
+    //   sampleSim->safe_do_circuit(noiseOps);
+    //   if (auto stimName = isValidStimNoiseChannel(channel))
+    //     noiseOps.safe_append_u(stimName.value().stim_name, stimTargets,
+    //                            channel.parameters);
+    // }
+  }
+
+  bool isValidNoiseChannel(const cudaq::noise_model_type &type) const override {
+    kraus_channel c;
+    c.noise_type = type;
+    return isValidStimNoiseChannel(c).has_value();
+  }
+
+  void applyNoise(const cudaq::kraus_channel &channel,
+                  const std::vector<std::size_t> &qubits) override {
+    flushGateQueue();
+    cudaq::info("[stim] apply kraus channel {}", channel.get_type_name());
     stim::Circuit noiseOps;
-    for (auto &channel : krausChannels) {
-      if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel) {
-        if (!is_pcm_mode)
-          noiseOps.safe_append_ua("X_ERROR", stimTargets,
-                                  channel.parameters[0]);
-        else if (pcm_err_count < sampleSim->batch_size) {
-          for (auto q : stimTargets)
-            sampleSim->x_table[q][pcm_err_count] ^= 1;
-          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-        }
-        pcm_err_count++;
-      } else if (channel.noise_type ==
-                 cudaq::noise_model_type::phase_flip_channel) {
-        if (!is_pcm_mode)
-          noiseOps.safe_append_ua("Z_ERROR", stimTargets,
-                                  channel.parameters[0]);
-        else if (pcm_err_count < sampleSim->batch_size) {
-          for (auto q : stimTargets)
-            sampleSim->z_table[q][pcm_err_count] ^= 1;
-          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-        }
-        pcm_err_count++;
-      } else if (channel.noise_type ==
-                 cudaq::noise_model_type::depolarization_channel) {
-        if (!is_pcm_mode)
-          noiseOps.safe_append_ua("DEPOLARIZE1", stimTargets,
-                                  channel.parameters[0]);
-        else if (pcm_err_count < sampleSim->batch_size) {
-          for (auto q : stimTargets) {
-            sampleSim->x_table[q][pcm_err_count] ^= 1;
-            sampleSim->z_table[q][pcm_err_count] ^= 1;
-          }
-          executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-        }
-        pcm_err_count++;
-      }
-      cudaq::info("Applying / application is on pcm_err_count = {}",
-                  pcm_err_count);
-    }
-    if (is_pcm_mode) {
-      // Don't apply anything else to sampleSim because that was already
-      // manipulated above.
-    } else {
-      // Only apply the noise operations to the sample simulator (not the
-      // Tableau simulator).
+    std::vector<std::uint32_t> stimTargets;
+    stimTargets.reserve(qubits.size());
+    for (auto q : qubits)
+      stimTargets.push_back(static_cast<std::uint32_t>(q));
+
+    // If we have a valid operation, apply it
+    if (auto stimName = isValidStimNoiseChannel(channel)) {
+      noiseOps.safe_append_u(stimName.value(), stimTargets, channel.parameters);
       sampleSim->safe_do_circuit(noiseOps);
     }
   }
@@ -277,7 +368,7 @@ protected:
 
     if (task.controls.size() > 1)
       throw std::runtime_error(
-          "Gates with >1 controls not supported by stim simulator");
+          "Gates with >1 controls not supported by Stim simulator");
     if (task.controls.size() >= 1)
       gateName = "C" + gateName;
     for (auto c : task.controls)
@@ -358,6 +449,12 @@ public:
   /// measurements.
   cudaq::ExecutionResult sample(const std::vector<std::size_t> &qubits,
                                 const int shots) override {
+    if (executionContext->explicitMeasurements && qubits.empty() &&
+        num_measurements == 0)
+      throw std::runtime_error(
+          "The sampling option `explicit_measurements` is not supported on a "
+          "kernel without any measurement operation.");
+
     bool populateResult = [&]() {
       if (executionContext->explicitMeasurements)
         return qubits.empty();

@@ -7,9 +7,9 @@
  ******************************************************************************/
 
 #include "common/Logger.h"
+#include "cudaq/operators.h"
 #include "cudaq/qis/managers/BasicExecutionManager.h"
 #include "cudaq/qis/qudit.h"
-#include "cudaq/spin_op.h"
 #include "cudaq/utils/cudaq_utils.h"
 #include "nvqir/CircuitSimulator.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -219,6 +219,29 @@ protected:
                                    "application requested " +
                                    gateName + ".");
         })();
+  }
+
+  void applyNoise(const kraus_channel &channel,
+                  const std::vector<QuditInfo> &targets) override {
+    if (isInTracerMode())
+      return;
+
+    flushGateQueue();
+
+    if (channel.empty())
+      if (!simulator()->isValidNoiseChannel(channel.noise_type))
+        throw std::runtime_error("this is not a valid kraus channel name (" +
+                                 channel.get_type_name() +
+                                 "), no "
+                                 "kraus ops available to construct it.");
+
+    std::vector<std::size_t> localT;
+    std::transform(targets.begin(), targets.end(), std::back_inserter(localT),
+                   [](auto &&el) { return el.id; });
+    cudaq::info(
+        "[DefaultExecutionManager] Applying fine-grain kraus channel {}.",
+        channel.get_type_name());
+    simulator()->applyNoise(channel, localT);
   }
 
   int measureQudit(const cudaq::QuditInfo &q,

@@ -115,7 +115,7 @@ public:
       fromComplex = true;
       eleTy = complexTy.getElementType();
     }
-    if (isa<cudaq::cc::StateType>(eleTy))
+    if (isa<quake::StateType>(eleTy))
       functionName = cudaq::opt::QIRArrayQubitAllocateArrayWithCudaqStatePtr;
     if (eleTy == rewriter.getF64Type())
       functionName =
@@ -478,6 +478,14 @@ public:
     // a pauli_word directly `{i8*,i64}` or a string literal
     // `ptr<i8>`. If it is a string literal, we need to map it to
     // a pauli word.
+    if (instOp.getPauliLiteralAttr()) {
+      auto builder = cudaq::IRBuilder::atBlockEnd(parentModule.getBody());
+      auto pauliConst = builder.genCStringLiteralAppendNul(
+          loc, parentModule, *instOp.getPauliLiteral());
+      operands.push_back(rewriter.create<LLVM::AddressOfOp>(
+          loc, cudaq::opt::factory::getPointerType(pauliConst.getType()),
+          pauliConst.getSymName()));
+    }
     auto pauliWord = operands.back();
     if (auto ptrTy = dyn_cast<LLVM::LLVMPointerType>(pauliWord.getType())) {
       // Make sure we have the right types to extract the
