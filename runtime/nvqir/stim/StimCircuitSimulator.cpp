@@ -21,8 +21,8 @@ namespace nvqir {
 
 struct StimNoiseType {
   std::string stim_name;
-  std::vector<bool> is_x;
-  std::vector<bool> is_z;
+  std::vector<bool> flips_x;
+  std::vector<bool> flips_z;
   std::vector<double> params;
   int num_targets = 1;
 };
@@ -90,8 +90,8 @@ protected:
           if (q1_err == 0 && q2_err == 0)                // skip II
             continue;
           // Push back the values for the two qubits, for both x and z errors
-          ret.is_x.insert(ret.is_x.end(), {x_err[q1_err], x_err[q2_err]});
-          ret.is_z.insert(ret.is_z.end(), {z_err[q1_err], z_err[q2_err]});
+          ret.flips_x.insert(ret.flips_x.end(), {x_err[q1_err], x_err[q2_err]});
+          ret.flips_z.insert(ret.flips_z.end(), {z_err[q1_err], z_err[q2_err]});
         }
       }
       return ret;
@@ -271,58 +271,8 @@ protected:
     cudaq::info("Applying {} kraus channels to qubits {}", krausChannels.size(),
                 stimTargets);
 
-    // TODO
-    // stim::Circuit noiseOps;
-    // for (auto &channel : krausChannels) {
-    //   if (channel.noise_type == cudaq::noise_model_type::bit_flip_channel) {
-    //     if (!is_pcm_mode)
-    //       noiseOps.safe_append_ua("X_ERROR", stimTargets,
-    //                               channel.parameters[0]);
-    //     else if (pcm_err_count < sampleSim->batch_size) {
-    //       for (auto q : stimTargets)
-    //         sampleSim->x_table[q][pcm_err_count] ^= 1;
-    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-    //     }
-    //     pcm_err_count++;
-    //   } else if (channel.noise_type ==
-    //              cudaq::noise_model_type::phase_flip_channel) {
-    //     if (!is_pcm_mode)
-    //       noiseOps.safe_append_ua("Z_ERROR", stimTargets,
-    //                               channel.parameters[0]);
-    //     else if (pcm_err_count < sampleSim->batch_size) {
-    //       for (auto q : stimTargets)
-    //         sampleSim->z_table[q][pcm_err_count] ^= 1;
-    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-    //     }
-    //     pcm_err_count++;
-    //   } else if (channel.noise_type ==
-    //              cudaq::noise_model_type::depolarization_channel) {
-    //     if (!is_pcm_mode)
-    //       noiseOps.safe_append_ua("DEPOLARIZE1", stimTargets,
-    //                               channel.parameters[0]);
-    //     else if (pcm_err_count < sampleSim->batch_size) {
-    //       for (auto q : stimTargets) {
-    //         sampleSim->x_table[q][pcm_err_count] ^= 1;
-    //         sampleSim->z_table[q][pcm_err_count] ^= 1;
-    //       }
-    //       executionContext->pcm_probabilities->push_back(channel.parameters[0]);
-    //     }
-    //     pcm_err_count++;
-    //   }
-    //   cudaq::info("Applying / application is on pcm_err_count = {}",
-    //               pcm_err_count);
-    // }
-    // if (is_pcm_mode) {
-    //   // Don't apply anything else to sampleSim because that was already
-    //   // manipulated above.
-    // } else {
-    //   // Only apply the noise operations to the sample simulator (not the
-    //   // Tableau simulator).
-    //   sampleSim->safe_do_circuit(noiseOps);
-    //   if (auto stimName = isValidStimNoiseChannel(channel))
-    //     noiseOps.safe_append_u(stimName.value().stim_name, stimTargets,
-    //                            channel.parameters);
-    // }
+    for (auto &channel : krausChannels)
+      applyNoise(channel, stimTargets);
   }
 
   bool isValidNoiseChannel(const cudaq::noise_model_type &type) const override {
@@ -333,18 +283,48 @@ protected:
 
   void applyNoise(const cudaq::kraus_channel &channel,
                   const std::vector<std::size_t> &qubits) override {
+    std::vector<std::uint32_t> stimTargets(qubits.begin(), qubits.end());
+    applyNoise(channel, stimTargets);
+  }
+
+  void applyNoise(const cudaq::kraus_channel &channel,
+                  const std::vector<std::uint32_t> &qubits) {
     flushGateQueue();
-    cudaq::info("[stim] apply kraus channel {}", channel.get_type_name());
-    stim::Circuit noiseOps;
-    std::vector<std::uint32_t> stimTargets;
-    stimTargets.reserve(qubits.size());
-    for (auto q : qubits)
-      stimTargets.push_back(static_cast<std::uint32_t>(q));
+    cudaq::info("[stim] apply kraus channel {}, is_pcm_mode = {}",
+                channel.get_type_name(), is_pcm_mode);
 
     // If we have a valid operation, apply it
-    if (auto stimName = isValidStimNoiseChannel(channel)) {
-      noiseOps.safe_append_u(stimName.value(), stimTargets, channel.parameters);
-      sampleSim->safe_do_circuit(noiseOps);
+    if (auto res = isValidStimNoiseChannel(channel)) {
+      if (is_pcm_mode) {
+        // Apply the errors found in res directly into sampleSim, as if they
+        // definitely happened, 1 mechanism at a time. (For example, a
+        // depolarization channel will manifest as 3 possible error mechanisms:
+        // an X error, Y error, or Z error.)
+        std::size_t num_mechanisms = res->params.size();
+        std::size_t flip_ix = 0;
+        for (std::size_t m = 0; m < num_mechanisms; m++) {
+          // In this mode, the "shot" is an alias for the PCM error count.
+          std::size_t shot = pcm_err_count;
+          if (pcm_err_count < sampleSim->batch_size) {
+            for (std::size_t t = 0; t < res->num_targets; t++, flip_ix++) {
+              sampleSim->x_table[qubits[t]][shot] ^= res->flips_x[flip_ix];
+              sampleSim->z_table[qubits[t]][shot] ^= res->flips_z[flip_ix];
+            }
+            executionContext->pcm_probabilities->push_back(res->params[m]);
+            pcm_err_count++;
+          }
+        }
+      } else {
+        stim::Circuit noiseOps;
+        noiseOps.safe_append_u(res.value().stim_name, qubits,
+                               channel.parameters);
+        // Only apply the noise operations to the sample simulator (not the
+        // Tableau simulator).
+        sampleSim->safe_do_circuit(noiseOps);
+
+        // Increment the error count by the number of mechanisms
+        pcm_err_count += res->params.size();
+      }
     }
   }
 
