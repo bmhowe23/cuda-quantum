@@ -96,18 +96,19 @@ protected:
       }
       return ret;
     }
-    case cudaq::noise_model_type::pauli1:
+    case cudaq::noise_model_type::pauli1: {
       // Either X error, Y error, or Z error happens, each with its own
       // probability that is specified in the 3 channel parameters.
+      static_assert(cudaq::pauli1::num_parameters == 3);
       assert(channel.parameters.size() == cudaq::pauli1::num_parameters);
-      assert(channel.parameters.size() == 3);
       return StimNoiseType{.stim_name = "PAULI_CHANNEL_1",
                            .flips_x = {true, true, false},
                            .flips_z = {false, true, true},
                            .params = channel.parameters};
+    }
     case cudaq::noise_model_type::pauli2: {
+      static_assert(cudaq::pauli2::num_parameters == 15);
       assert(channel.parameters.size() == cudaq::pauli2::num_parameters);
-      assert(channel.parameters.size() == 15);
       StimNoiseType ret{.stim_name = "PAULI_CHANNEL_2",
                         .params = channel.parameters,
                         .num_targets = 2};
