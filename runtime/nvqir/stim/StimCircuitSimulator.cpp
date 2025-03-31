@@ -7,23 +7,23 @@
  ******************************************************************************/
 
 #include "nvqir/CircuitSimulator.h"
-#include "nvqir/Gates.h"
 #include "stim.h"
-
-#include <bit>
-#include <iostream>
-#include <set>
-#include <span>
 
 using namespace cudaq;
 
 namespace nvqir {
 
+/// @brief Collection of information about a noise type in Stim
 struct StimNoiseType {
+  /// The name of the error mechanism in Stim
   std::string stim_name;
+  /// Whether the error mechanism flips X; one per error mechanism per target
   std::vector<bool> flips_x;
+  /// Whether the error mechanism flips Z; one per error mechanism per target
   std::vector<bool> flips_z;
+  /// One probability per error mechanism
   std::vector<double> params;
+  /// The number of targets for the noise type
   int num_targets = 1;
 };
 
