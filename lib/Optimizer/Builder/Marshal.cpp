@@ -543,12 +543,22 @@ Value populateVectorAddendum(Location loc, OpBuilder &builder, Value host,
   builder.create<cudaq::cc::StoreOp>(loc, size, sizeSlot);
   auto ptrI8Ty = cudaq::cc::PointerType::get(builder.getI8Type());
   auto ptrPtrI8 = cudaq::opt::marshal::getPointerToPointerType(builder);
-  auto fromPtrPtr = builder.create<cudaq::cc::CastOp>(loc, ptrPtrI8, host);
-  auto fromPtr = builder.create<cudaq::cc::LoadOp>(loc, fromPtrPtr);
+  Value dataPtr = [&]() -> Value {
+    if constexpr (FromQPU) {
+      auto eleTy = cast<cudaq::cc::StdvecType>(host.getType()).getElementType();
+      auto ptrTy = cudaq::cc::PointerType::get(eleTy);
+      auto vecDataPtr =
+          builder.create<cudaq::cc::StdvecDataOp>(loc, ptrTy, host);
+      return builder.create<cudaq::cc::CastOp>(loc, ptrI8Ty, vecDataPtr);
+    } else /*constexpr*/ {
+      auto fromPtrPtr = builder.create<cudaq::cc::CastOp>(loc, ptrPtrI8, host);
+      return builder.create<cudaq::cc::LoadOp>(loc, fromPtrPtr);
+    }
+  }();
   auto notVolatile = builder.create<arith::ConstantIntOp>(loc, 0, 1);
   auto toPtr = builder.create<cudaq::cc::CastOp>(loc, ptrI8Ty, addendum);
   builder.create<func::CallOp>(loc, std::nullopt, cudaq::llvmMemCopyIntrinsic,
-                               ValueRange{toPtr, fromPtr, size, notVolatile});
+                               ValueRange{toPtr, dataPtr, size, notVolatile});
   auto ptrI8Arr = getByteAddressableType(builder);
   auto addBytes = builder.create<cudaq::cc::CastOp>(loc, ptrI8Arr, addendum);
   return builder.create<cudaq::cc::ComputePtrOp>(
@@ -1019,8 +1029,8 @@ constructDynamicInputValue(Location loc, OpBuilder &builder, Type devTy,
       Value vecVar = builder.create<cudaq::cc::UndefOp>(loc, vecTy);
       Value castData =
           builder.create<cudaq::cc::CastOp>(loc, ptrTy, trailingData);
-      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castData,
-                                                        vecVar, 0);
+      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, vecVar,
+                                                        castData, 0);
       auto ptrArrTy =
           cudaq::cc::PointerType::get(cudaq::cc::ArrayType::get(eleTy));
       auto castTrailingData =
@@ -1028,10 +1038,10 @@ constructDynamicInputValue(Location loc, OpBuilder &builder, Type devTy,
       Value castEnd = builder.create<cudaq::cc::ComputePtrOp>(
           loc, ptrTy, castTrailingData,
           ArrayRef<cudaq::cc::ComputePtrArg>{bytes});
-      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castEnd,
-                                                        vecVar, 1);
-      result = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castEnd,
-                                                        vecVar, 2);
+      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, vecVar,
+                                                        castEnd, 1);
+      result = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, vecVar,
+                                                        castEnd, 2);
     } else /*constexpr*/ {
       // From host, so construct the stdvec span with it.
       auto castTrailingData = builder.create<cudaq::cc::CastOp>(
@@ -1085,9 +1095,17 @@ processInputValueImpl(Location loc, OpBuilder &builder, Value trailingData,
   auto packedPtr = builder.create<cudaq::cc::ComputePtrOp>(
       loc, cudaq::cc::PointerType::get(packedStructTy.getMember(off)),
       ptrPackedStruct, ArrayRef<cudaq::cc::ComputePtrArg>{off});
-  if (cudaq::cc::isDynamicType(inTy))
-    return constructDynamicInputValue<FromQPU>(loc, builder, inTy, packedPtr,
-                                               trailingData);
+  if (cudaq::cc::isDynamicType(inTy)) {
+    auto pear = constructDynamicInputValue<FromQPU>(loc, builder, inTy,
+                                                    packedPtr, trailingData);
+    if (isa<cudaq::cc::SpanLikeType>(inTy)) {
+       Value retVal = pear.first;
+       Value tmp = builder.create<cudaq::cc::AllocaOp>(loc, retVal.getType());
+       builder.create<cudaq::cc::StoreOp>(loc, retVal, tmp);
+       return {tmp, pear.second};
+    }
+    return pear;
+  }
   auto val = fetchInputValue(loc, builder, inTy, packedPtr);
   return {val, trailingData};
 }

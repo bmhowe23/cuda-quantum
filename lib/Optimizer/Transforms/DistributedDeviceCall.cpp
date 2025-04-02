@@ -82,6 +82,26 @@ public:
   }
 };
 
+class DistributedFuncPat : public OpRewritePattern<func::FuncOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(func::FuncOp func,
+                                PatternRewriter &rewriter) const override {
+    if (!func->hasAttr(cudaq::deviceCallAttrName))
+      return failure();
+    FunctionType devFuncTy = func.getFunctionType();
+    auto module = func->getParentOfType<ModuleOp>();
+    FunctionType newDevFuncTy = cudaq::opt::factory::toHostSideFuncType(
+        devFuncTy, /*addThisPtr=*/false, module);
+    if (func.getFunctionType() == newDevFuncTy)
+      return failure();
+    rewriter.updateRootInPlace(func,
+                               [&]() { func.setFunctionType(newDevFuncTy); });
+    return success();
+  }
+};
+
 class DistributedDeviceCallPat
     : public OpRewritePattern<cudaq::cc::DeviceCallOp> {
 public:
@@ -254,6 +274,7 @@ public:
         ArrayRef<cudaq::cc::ComputePtrArg>{numInputs});
     Value resVal = rewriter.create<cudaq::cc::LoadOp>(loc, outputPtr);
     rewriter.create<func::ReturnOp>(loc, resVal);
+    marshalFunc.setPublic();
   }
 
   static void genNewUnmarshalFunc(Location loc, func::FuncOp unmarshalFunc,
@@ -288,8 +309,11 @@ public:
       args.push_back(a);
     }
 
+    auto module = rawBuffer->getParentOfType<ModuleOp>();
+    auto newDevFuncTy = cast<FunctionType>(
+        cudaq::opt::factory::convertToHostSideType(devFuncTy, module));
     auto callDevFunc = rewriter.create<func::CallOp>(
-        loc, devFuncTy.getResults(), devFunc.getName(), args);
+        loc, newDevFuncTy.getResults(), devFunc.getName(), args);
 
     // If the device function has a return value, then store it to the result
     // space in the buffer.
@@ -313,6 +337,7 @@ public:
         loc, unmarshalFunc.getFunctionType().getResult(0),
         "__nvqpp_zeroDynamicResult", ValueRange{});
     rewriter.create<func::ReturnOp>(loc, zeroCall.getResult(0));
+    unmarshalFunc.setPublic();
   }
 
   static void genRegistrationHook(Location loc, StringRef callbackName,
@@ -394,8 +419,19 @@ public:
       module.emitError("could not load __nvqpp_zeroDynamicResult");
       return;
     }
+    if (failed(irBuilder.loadIntrinsic(module, cudaq::llvmMemCopyIntrinsic))) {
+      module.emitError(std::string("could not load ") +
+                       cudaq::llvmMemCopyIntrinsic);
+      return;
+    }
+
     patterns.insert<DistributedDeviceCallPat>(ctx);
     if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns))))
+      signalPassFailure();
+
+    RewritePatternSet patterns2(ctx);
+    patterns2.insert<DistributedFuncPat>(ctx);
+    if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns2))))
       signalPassFailure();
   }
 };
