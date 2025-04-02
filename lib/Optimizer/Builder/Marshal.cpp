@@ -1096,15 +1096,20 @@ processInputValueImpl(Location loc, OpBuilder &builder, Value trailingData,
       loc, cudaq::cc::PointerType::get(packedStructTy.getMember(off)),
       ptrPackedStruct, ArrayRef<cudaq::cc::ComputePtrArg>{off});
   if (cudaq::cc::isDynamicType(inTy)) {
-    auto pear = constructDynamicInputValue<FromQPU>(loc, builder, inTy,
-                                                    packedPtr, trailingData);
-    if (isa<cudaq::cc::SpanLikeType>(inTy)) {
-       Value retVal = pear.first;
-       Value tmp = builder.create<cudaq::cc::AllocaOp>(loc, retVal.getType());
-       builder.create<cudaq::cc::StoreOp>(loc, retVal, tmp);
-       return {tmp, pear.second};
+    if constexpr (FromQPU) {
+      auto dynamo = constructDynamicInputValue<FromQPU>(loc, builder, inTy,
+                                                      packedPtr, trailingData);
+      if (isa<cudaq::cc::SpanLikeType>(inTy)) {
+        Value retVal = dynamo.first;
+        Value tmp = builder.create<cudaq::cc::AllocaOp>(loc, retVal.getType());
+        builder.create<cudaq::cc::StoreOp>(loc, retVal, tmp);
+        return {tmp, dynamo.second};
+      }
+      return dynamo;
+    } else /*constexpr*/ {
+      return constructDynamicInputValue<FromQPU>(loc, builder, inTy, packedPtr,
+                                                 trailingData);
     }
-    return pear;
   }
   auto val = fetchInputValue(loc, builder, inTy, packedPtr);
   return {val, trailingData};

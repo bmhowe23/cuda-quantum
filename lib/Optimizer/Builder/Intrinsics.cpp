@@ -243,8 +243,10 @@ static constexpr IntrinsicCode intrinsicTable[] = {
     return
   })#"},
 
-    {cudaq::runtime::callDeviceCallback, {},
-     "func.func private @__nvqpp__device_callback_run(i64, !cc.ptr<i8>, !cc.ptr<i8>, !cc.ptr<i8>, i64, i64) -> !cc.struct<{!cc.ptr<i8>, i64}>"},
+    {cudaq::runtime::callDeviceCallback,
+     {},
+     "func.func private @__nvqpp__device_callback_run(i64, !cc.ptr<i8>, "
+     "!cc.ptr<i8>, !cc.ptr<i8>, i64, i64) -> !cc.struct<{!cc.ptr<i8>, i64}>"},
 
     {"__nvqpp_createDynamicResult",
      /* arguments:
@@ -429,14 +431,10 @@ static constexpr IntrinsicCode intrinsicTable[] = {
     // NB: load llvmStackSave to get both.
     {cudaq::llvmStackRestore,
      {},
-     R"#(
-  func.func private @llvm.stackrestore(!cc.ptr<i8>)
-)#"},
+     "func.func private @llvm.stackrestore(!cc.ptr<i8>)"},
     {cudaq::llvmStackSave,
      {cudaq::llvmStackRestore},
-     R"#(
-  func.func private @llvm.stacksave() -> !cc.ptr<i8>
-)#"},
+     "func.func private @llvm.stacksave() -> !cc.ptr<i8>"},
 
     {"malloc", {}, "func.func private @malloc(i64) -> !cc.ptr<i8>"},
 
