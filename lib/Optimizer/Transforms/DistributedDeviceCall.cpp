@@ -28,6 +28,60 @@ using namespace mlir;
 
 namespace {
 
+class UnicornDeviceCallPat : public OpRewritePattern<cudaq::cc::DeviceCallOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(cudaq::cc::DeviceCallOp devcall,
+                                PatternRewriter &rewriter) const override {
+    constexpr const char PassthroughAttr[] = "passthrough";
+    constexpr const char UnicornAttr[] = "cuda-q-fun-id";
+    auto module = devcall->getParentOfType<ModuleOp>();
+    auto devFuncName = devcall.getCallee();
+    auto devFunc = module.lookupSymbol<func::FuncOp>(devFuncName);
+    if (!devFunc) {
+      LLVM_DEBUG(llvm::dbgs() << "cannot find the function " << devFuncName
+                              << " in module\n");
+      return failure();
+    }
+
+    llvm::MD5 hash;
+    hash.update(devFuncName);
+    llvm::MD5::MD5Result result;
+    hash.final(result);
+    auto callbackCode = result.low();
+
+    bool needToAddIt = true;
+    SmallVector<Attribute> funcIdAttr;
+    if (auto passthruAttr = devFunc->getAttr(PassthroughAttr)) {
+      auto arrayAttr = cast<ArrayAttr>(passthruAttr);
+      funcIdAttr.append(arrayAttr.begin(), arrayAttr.end());
+      for (auto a : arrayAttr) {
+        if (auto strArrAttr = dyn_cast<ArrayAttr>(a)) {
+          auto strAttr = dyn_cast<StringAttr>(strArrAttr[0]);
+          if (!strAttr)
+            continue;
+          if (strAttr.getValue() == UnicornAttr) {
+            needToAddIt = false;
+            break;
+          }
+        }
+      }
+    }
+    if (needToAddIt) {
+      auto callbackCodeAsStr = std::to_string(callbackCode);
+      funcIdAttr.push_back(rewriter.getStrArrayAttr(
+          {UnicornAttr, rewriter.getStringAttr(callbackCodeAsStr)}));
+      devFunc->setAttr(PassthroughAttr, rewriter.getArrayAttr(funcIdAttr));
+    }
+
+    rewriter.replaceOpWithNewOp<func::CallOp>(
+        devcall, devFunc.getFunctionType().getResults(), devFuncName,
+        devcall.getOperands());
+    return success();
+  }
+};
+
 class DistributedDeviceCallPat
     : public OpRewritePattern<cudaq::cc::DeviceCallOp> {
 public:
@@ -305,6 +359,24 @@ public:
     auto *ctx = &getContext();
     RewritePatternSet patterns(ctx);
     ModuleOp module = getOperation();
+
+    if (useMagicUnicorn) {
+      // For this solution, we replace the device_call operations with calls to
+      // the identified symbol. The function identified via the symbol is merely
+      // annotated with a special passthrough attribute of "cuda-q-fun-id" with
+      // an integer value. The integer value is a 64 bit hash of the symbol
+      // name. It is entirely up to the unicorn solution to figure out how to
+      // bind the hash to the correct callback function.
+      patterns.insert<UnicornDeviceCallPat>(ctx);
+      if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns))))
+        signalPassFailure();
+      return;
+    }
+
+    // If we're not using the magic unicorn solution, then use the generalized
+    // approach. This consists of having the compiler generate the marshal and
+    // unmarshal code and call through the runtime's hook function, which should
+    // be specialized for whatever target configuration happens to be selected.
     auto irBuilder = cudaq::IRBuilder::atBlockEnd(module.getBody());
     if (failed(irBuilder.loadIntrinsic(
             module, cudaq::runtime::CudaqRegisterCallbackName))) {

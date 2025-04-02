@@ -1012,7 +1012,7 @@ constructDynamicInputValue(Location loc, OpBuilder &builder, Type devTy,
     Value result;
     if constexpr (FromQPU) {
       // From QPU, so construct a std::vector from the span.
-      auto ptrTy = cudaq::cc::PointerType::get(builder.getI8Type());
+      auto ptrTy = cudaq::cc::PointerType::get(eleTy);
       auto *ctx = builder.getContext();
       auto vecTy =
           cudaq::cc::StructType::get(ctx, ArrayRef<Type>{ptrTy, ptrTy, ptrTy});
@@ -1021,8 +1021,8 @@ constructDynamicInputValue(Location loc, OpBuilder &builder, Type devTy,
           builder.create<cudaq::cc::CastOp>(loc, ptrTy, trailingData);
       vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castData,
                                                         vecVar, 0);
-      auto ptrArrTy = cudaq::cc::PointerType::get(
-          cudaq::cc::ArrayType::get(builder.getI8Type()));
+      auto ptrArrTy =
+          cudaq::cc::PointerType::get(cudaq::cc::ArrayType::get(eleTy));
       auto castTrailingData =
           builder.create<cudaq::cc::CastOp>(loc, ptrArrTy, trailingData);
       Value castEnd = builder.create<cudaq::cc::ComputePtrOp>(

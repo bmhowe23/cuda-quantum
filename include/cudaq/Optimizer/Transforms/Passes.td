@@ -318,6 +318,13 @@ def DistributedDeviceCall : Pass<"distributed-device-call", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    // The magic unicorn solution is to be used for one particular vendor's
+    // implementation which requires zero support code from the compiler.
+    Option<"useMagicUnicorn", "magic-unicorn", "bool",
+      /*default=*/"false", "Let the target do all the heavy lifting.">
+  ];
 }
 
 def EraseNoise : Pass<"erase-noise"> {
