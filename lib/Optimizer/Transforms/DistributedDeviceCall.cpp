@@ -194,9 +194,10 @@ public:
       rewriter.create<func::ReturnOp>(loc, undef);
       return;
     }
+    std::int32_t numInputs = devFuncTy.getNumInputs();
     auto outputPtr = rewriter.create<cudaq::cc::ComputePtrOp>(
         loc, cudaq::cc::PointerType::get(resTy), typedBuffer,
-        ArrayRef<cudaq::cc::ComputePtrArg>{devFuncTy.getNumInputs()});
+        ArrayRef<cudaq::cc::ComputePtrArg>{numInputs});
     Value resVal = rewriter.create<cudaq::cc::LoadOp>(loc, outputPtr);
     rewriter.create<func::ReturnOp>(loc, resVal);
   }
@@ -246,9 +247,10 @@ public:
         rewriter.create<func::ReturnOp>(loc, undef);
         return;
       }
+      std::int32_t numInputs = devFuncTy.getNumInputs();
       auto outputPtr = rewriter.create<cudaq::cc::ComputePtrOp>(
           loc, cudaq::cc::PointerType::get(resTy), argsBuffer,
-          ArrayRef<cudaq::cc::ComputePtrArg>{devFuncTy.getNumInputs()});
+          ArrayRef<cudaq::cc::ComputePtrArg>{numInputs});
       rewriter.create<cudaq::cc::StoreOp>(loc, callDevFunc.getResult(0),
                                           outputPtr);
     }

@@ -951,73 +951,97 @@ constructDynamicInputValue(Location loc, OpBuilder &builder, Type devTy,
 
     if (cudaq::cc::isDynamicType(eleTy)) {
       // The vector is recursively dynamic.
-      // Create a new block in which to place the stdvec/struct data.
-      if constexpr (FromQPU) {
-        // From QPU, so the data is in host-side format (a span).
-        // XXX
-      } else /*constexpr*/ {
-        // From host, so data is in device-side format (a vector triple).
-        Value newVecData =
-            builder.create<cudaq::cc::AllocaOp>(loc, eleTy, vecLength);
-        // Compute new trailing data, skipping the current vector's data.
-        auto nextTrailingData =
-            incrementTrailingDataPointer(loc, builder, trailingData, bytes);
+      // Create a new block in which to place the stdvec/struct data. The
+      // trailing data is in device-side format (pointer-free spans).
+      Type toTy = [&]() {
+        // From QPU, so we want to unpack the data into vectors (of vectors).
+        if constexpr (FromQPU) {
+          auto module = vecLength->getParentOfType<ModuleOp>();
+          return cudaq::opt::factory::convertToHostSideType(eleTy, module);
+        } else {
+          // From host, so we want to unpack the data into spans (of spans).
+          return eleTy;
+        }
+      }();
+      Value newVecData =
+          builder.create<cudaq::cc::AllocaOp>(loc, toTy, vecLength);
+      // Compute new trailing data, skipping the current vector's data.
+      auto nextTrailingData =
+          incrementTrailingDataPointer(loc, builder, trailingData, bytes);
 
-        // For each element in the vector, convert it to device-side format and
-        // save the result in newVecData.
-        auto elePtrTy = cudaq::cc::PointerType::get(eleTy);
-        auto packTy = cudaq::opt::factory::genArgumentBufferType(eleTy);
-        Type packedArrTy =
-            cudaq::cc::PointerType::get(cudaq::cc::ArrayType::get(packTy));
-        Type packedEleTy = cudaq::cc::PointerType::get(packTy);
-        auto arrPtr =
-            builder.create<cudaq::cc::CastOp>(loc, packedArrTy, trailingData);
-        auto trailingDataVar = builder.create<cudaq::cc::AllocaOp>(
-            loc, nextTrailingData.getType());
-        builder.create<cudaq::cc::StoreOp>(loc, nextTrailingData,
-                                           trailingDataVar);
-        cudaq::opt::factory::createInvariantLoop(
-            builder, loc, vecLength,
-            [&](OpBuilder &builder, Location loc, Region &, Block &block) {
-              Value i = block.getArgument(0);
-              auto nextTrailingData =
-                  builder.create<cudaq::cc::LoadOp>(loc, trailingDataVar);
-              auto vecMemPtr = builder.create<cudaq::cc::ComputePtrOp>(
-                  loc, packedEleTy, arrPtr,
-                  ArrayRef<cudaq::cc::ComputePtrArg>{i});
-              auto r = constructDynamicInputValue<FromQPU>(
-                  loc, builder, eleTy, vecMemPtr, nextTrailingData);
-              auto newVecPtr = builder.create<cudaq::cc::ComputePtrOp>(
-                  loc, elePtrTy, newVecData,
-                  ArrayRef<cudaq::cc::ComputePtrArg>{i});
-              builder.create<cudaq::cc::StoreOp>(loc, r.first, newVecPtr);
-              builder.create<cudaq::cc::StoreOp>(loc, r.second,
-                                                 trailingDataVar);
-            });
+      // For each element in the vector, convert it to device-side format and
+      // save the result in newVecData.
+      auto elePtrTy = cudaq::cc::PointerType::get(eleTy);
+      auto packTy = cudaq::opt::factory::genArgumentBufferType(eleTy);
+      Type packedArrTy =
+          cudaq::cc::PointerType::get(cudaq::cc::ArrayType::get(packTy));
+      Type packedEleTy = cudaq::cc::PointerType::get(packTy);
+      auto arrPtr =
+          builder.create<cudaq::cc::CastOp>(loc, packedArrTy, trailingData);
+      auto trailingDataVar =
+          builder.create<cudaq::cc::AllocaOp>(loc, nextTrailingData.getType());
+      builder.create<cudaq::cc::StoreOp>(loc, nextTrailingData,
+                                         trailingDataVar);
+      cudaq::opt::factory::createInvariantLoop(
+          builder, loc, vecLength,
+          [&](OpBuilder &builder, Location loc, Region &, Block &block) {
+            Value i = block.getArgument(0);
+            auto nextTrailingData =
+                builder.create<cudaq::cc::LoadOp>(loc, trailingDataVar);
+            auto vecMemPtr = builder.create<cudaq::cc::ComputePtrOp>(
+                loc, packedEleTy, arrPtr,
+                ArrayRef<cudaq::cc::ComputePtrArg>{i});
+            auto r = constructDynamicInputValue<FromQPU>(
+                loc, builder, eleTy, vecMemPtr, nextTrailingData);
+            auto newVecPtr = builder.create<cudaq::cc::ComputePtrOp>(
+                loc, elePtrTy, newVecData,
+                ArrayRef<cudaq::cc::ComputePtrArg>{i});
+            builder.create<cudaq::cc::StoreOp>(loc, r.first, newVecPtr);
+            builder.create<cudaq::cc::StoreOp>(loc, r.second, trailingDataVar);
+          });
 
-        // Create the new outer stdvec span as the result.
-        Value stdvecResult = builder.create<cudaq::cc::StdvecInitOp>(
-            loc, spanTy, newVecData, vecLength);
-        nextTrailingData =
-            builder.create<cudaq::cc::LoadOp>(loc, trailingDataVar);
-        return {stdvecResult, nextTrailingData};
-      }
+      // Create the new outer stdvec span as the result.
+      Value stdvecResult = builder.create<cudaq::cc::StdvecInitOp>(
+          loc, spanTy, newVecData, vecLength);
+      nextTrailingData =
+          builder.create<cudaq::cc::LoadOp>(loc, trailingDataVar);
+      return {stdvecResult, nextTrailingData};
     }
 
     // This vector has constant data, so just use the data in-place.
+    Value result;
     if constexpr (FromQPU) {
       // From QPU, so construct a std::vector from the span.
-      // XXX
+      auto ptrTy = cudaq::cc::PointerType::get(builder.getI8Type());
+      auto *ctx = builder.getContext();
+      auto vecTy =
+          cudaq::cc::StructType::get(ctx, ArrayRef<Type>{ptrTy, ptrTy, ptrTy});
+      Value vecVar = builder.create<cudaq::cc::UndefOp>(loc, vecTy);
+      Value castData =
+          builder.create<cudaq::cc::CastOp>(loc, ptrTy, trailingData);
+      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castData,
+                                                        vecVar, 0);
+      auto ptrArrTy = cudaq::cc::PointerType::get(
+          cudaq::cc::ArrayType::get(builder.getI8Type()));
+      auto castTrailingData =
+          builder.create<cudaq::cc::CastOp>(loc, ptrArrTy, trailingData);
+      Value castEnd = builder.create<cudaq::cc::ComputePtrOp>(
+          loc, ptrTy, castTrailingData,
+          ArrayRef<cudaq::cc::ComputePtrArg>{bytes});
+      vecVar = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castEnd,
+                                                        vecVar, 1);
+      result = builder.create<cudaq::cc::InsertValueOp>(loc, vecTy, castEnd,
+                                                        vecVar, 2);
     } else /*constexpr*/ {
       // From host, so construct the stdvec span with it.
       auto castTrailingData = builder.create<cudaq::cc::CastOp>(
           loc, cudaq::cc::PointerType::get(eleTy), trailingData);
-      Value stdvecResult = builder.create<cudaq::cc::StdvecInitOp>(
+      result = builder.create<cudaq::cc::StdvecInitOp>(
           loc, spanTy, castTrailingData, vecLength);
-      auto nextTrailingData =
-          incrementTrailingDataPointer(loc, builder, trailingData, bytes);
-      return {stdvecResult, nextTrailingData};
     }
+    auto nextTrailingData =
+        incrementTrailingDataPointer(loc, builder, trailingData, bytes);
+    return {result, nextTrailingData};
   }
 
   // Argument must be a struct.
