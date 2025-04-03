@@ -14,14 +14,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/ExecutionEngine/OptUtils.h"
+#include "OptUtils.h"
 
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Target/TargetMachine.h"
 #include <optional>
 
@@ -56,13 +54,13 @@ static std::optional<OptimizationLevel> mapToLevel(unsigned optLevel,
   return std::nullopt;
 }
 std::function<Error(Module *)>
-makeOptimizingTransformer_BMH(unsigned optLevel, unsigned sizeLevel,
-                              TargetMachine *targetMachine);
+makeOptimizingTransformer(unsigned optLevel, unsigned sizeLevel,
+                          TargetMachine *targetMachine);
 // Create and return a lambda that uses LLVM pass manager builder to set up
 // optimizations based on the given level.
 std::function<Error(Module *)>
-makeOptimizingTransformer_BMH(unsigned optLevel, unsigned sizeLevel,
-                              TargetMachine *targetMachine) {
+makeOptimizingTransformer(unsigned optLevel, unsigned sizeLevel,
+                          TargetMachine *targetMachine) {
   return [optLevel, sizeLevel, targetMachine](Module *m) -> Error {
     std::optional<OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
     if (!ol) {
@@ -78,8 +76,8 @@ makeOptimizingTransformer_BMH(unsigned optLevel, unsigned sizeLevel,
     PipelineTuningOptions tuningOptions;
     tuningOptions.LoopUnrolling = true;
     tuningOptions.LoopInterleaving = true;
-    tuningOptions.LoopVectorization = false;
-    tuningOptions.SLPVectorization = false;
+    tuningOptions.LoopVectorization = false; // CUDA-Q customization
+    tuningOptions.SLPVectorization = false;  // CUDA-Q customization
 
     PassBuilder pb(targetMachine, tuningOptions);
 

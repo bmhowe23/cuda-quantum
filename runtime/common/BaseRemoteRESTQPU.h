@@ -431,11 +431,9 @@ public:
         moduleOp.push_back(globalOp.clone());
       // Check if the op is a function declaration with the cudaq-devicecall
       // attribute
-      if (auto funcOp = dyn_cast<mlir::func::FuncOp>(op)) {
-        llvm::errs() << "funcOp: " << funcOp.getSymName() << "\n";
+      if (auto funcOp = dyn_cast<mlir::func::FuncOp>(op))
         if (funcOp->hasAttr(cudaq::deviceCallAttrName))
           moduleOp.push_back(funcOp.clone());
-      }
     }
 
     // Lambda to apply a specific pipeline to the given ModuleOp
@@ -500,7 +498,6 @@ public:
         moduleOp.getContext()->disableMultithreading();
       if (enablePrintMLIREachPass)
         pm.enableIRPrinting();
-      // moduleOp->dump();
       if (failed(pm.run(moduleOp)))
         throw std::runtime_error("Could not successfully apply quake-synth.");
     }

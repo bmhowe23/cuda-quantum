@@ -10,6 +10,7 @@
 
 #include "Environment.h"
 #include "Logger.h"
+#include "OptUtils.h"
 #include "Timing.h"
 #include "cudaq/Frontend/nvqpp/AttributeNames.h"
 #include "cudaq/Optimizer/Builder/Runtime.h"
@@ -74,19 +75,9 @@ bool setupTargetTriple(llvm::Module *llvmModule) {
   return true;
 }
 
-std::function<llvm::Error(llvm::Module *)>
-makeOptimizingTransformer_BMH(unsigned optLevel, unsigned sizeLevel,
-                              llvm::TargetMachine *targetMachine);
-
 void optimizeLLVM(llvm::Module *module) {
-  int optLevel = []() {
-    if (auto *ch = getenv("CUDAQ_OPT_LEVEL"))
-      return std::atoi(ch);
-    return 3;
-  }();
-  // auto optPipeline = mlir::makeOptimizingTransformer(
-  auto optPipeline = makeOptimizingTransformer_BMH(
-      /*optLevel=*/optLevel, /*sizeLevel=*/0,
+  auto optPipeline = cudaq::makeOptimizingTransformer(
+      /*optLevel=*/3, /*sizeLevel=*/0,
       /*targetMachine=*/nullptr);
   if (auto err = optPipeline(module))
     throw std::runtime_error("Failed to optimize LLVM IR ");
@@ -213,7 +204,6 @@ mlir::LogicalResult verifyOutputCalls(llvm::CallBase *callInst,
 
 // Loop through the arguments in a call and verify that they are all constants
 mlir::LogicalResult verifyConstArguments(llvm::CallBase *callInst) {
-  return mlir::success();
   int iArg = 0;
   auto func = callInst ? callInst->getCalledFunction() : nullptr;
   auto funcName = func ? func->getName() : "N/A";
@@ -230,15 +220,16 @@ mlir::LogicalResult verifyConstArguments(llvm::CallBase *callInst) {
 }
 
 // Loop over the recording output functions and verify their characteristics
-mlir::LogicalResult verifyOutputRecordingFunctions(llvm::Module *llvmModule) {
+mlir::LogicalResult verifyOutputRecordingFunctions(llvm::Module *llvmModule,
+                                                   bool isBaseProfile) {
   for (llvm::Function &func : *llvmModule) {
     std::set<std::string> outputList;
     for (llvm::BasicBlock &block : func)
       for (llvm::Instruction &inst : block) {
         auto callInst = llvm::dyn_cast_or_null<llvm::CallBase>(&inst);
         auto func = callInst ? callInst->getCalledFunction() : nullptr;
-        // All call arguments must be constants
-        if (func && failed(verifyConstArguments(callInst)))
+        // All call arguments must be constants for the base profile
+        if (isBaseProfile && func && failed(verifyConstArguments(callInst)))
           return mlir::failure();
         // If it's an output function, do additional verification
         if (func && func->getName() == cudaq::opt::QIRRecordOutput)
@@ -321,21 +312,41 @@ mlir::LogicalResult verifyLLVMInstructions(llvm::Module *llvmModule,
       for (llvm::Instruction &inst : block) {
         // Only specific instructions are allowed at the top level, depending on
         // the specific profile
-        bool isValidBaseProfileInstruction = true;
-        // bool isValidBaseProfileInstruction =
-        //     llvm::isa<llvm::CallBase>(inst) ||
-        //     llvm::isa<llvm::BranchInst>(inst) ||
-        //     llvm::isa<llvm::ReturnInst>(inst);
-        // Note: there is an outstanding question about the adaptive profile
-        // with respect to `switch` and `select` instructions. They are
-        // currently described as "optional" in the spec, but there is no way to
-        // specify their presence via module flags. So to be cautious, for now
-        // we will assume they are not allowed in cuda-quantum programs.
-        bool isValidAdaptiveProfileInstruction = isValidBaseProfileInstruction;
-        // bool isValidAdaptiveProfileInstruction =
-        //     isValidBaseProfileInstruction ||
-        //     llvm::isa<llvm::SwitchInst>(inst) ||
-        //     llvm::isa<llvm::SelectInst>(inst);
+        bool isValidBaseProfileInstruction =
+            llvm::isa<llvm::CallBase>(inst) ||
+            llvm::isa<llvm::BranchInst>(inst) ||
+            llvm::isa<llvm::ReturnInst>(inst);
+        bool isValidAdaptiveProfileBinaryOperator = false;
+        bool isValidAdaptiveProfileOtherInstruction = false;
+        bool isValidAdaptiveProfileInstruction = false;
+        if (isAdaptiveProfile && llvm::isa<llvm::BinaryOperator>(inst)) {
+          auto opcode = llvm::cast<llvm::BinaryOperator>(inst).getOpcode();
+          isValidAdaptiveProfileBinaryOperator =
+              opcode == llvm::Instruction::Add ||
+              opcode == llvm::Instruction::Sub ||
+              opcode == llvm::Instruction::Mul ||
+              opcode == llvm::Instruction::UDiv ||
+              opcode == llvm::Instruction::SDiv ||
+              opcode == llvm::Instruction::SRem ||
+              opcode == llvm::Instruction::URem ||
+              opcode == llvm::Instruction::And ||
+              opcode == llvm::Instruction::Or ||
+              opcode == llvm::Instruction::Xor ||
+              opcode == llvm::Instruction::Shl ||
+              opcode == llvm::Instruction::LShr ||
+              opcode == llvm::Instruction::AShr;
+        } else if (isAdaptiveProfile) {
+          isValidAdaptiveProfileOtherInstruction =
+              llvm::isa<llvm::ICmpInst>(inst) ||
+              llvm::isa<llvm::ZExtInst>(inst) ||
+              llvm::isa<llvm::TruncInst>(inst) ||
+              llvm::isa<llvm::SelectInst>(inst) ||
+              llvm::isa<llvm::PHINode>(inst);
+        }
+        isValidAdaptiveProfileInstruction =
+            isValidBaseProfileInstruction ||
+            isValidAdaptiveProfileBinaryOperator ||
+            isValidAdaptiveProfileOtherInstruction;
         if (isBaseProfile && !isValidBaseProfileInstruction) {
           llvm::errs() << "error - invalid instruction found: " << inst << '\n';
           return mlir::failure();
@@ -468,7 +479,7 @@ qirProfileTranslationFunction(const char *qirProfile, mlir::Operation *op,
   if (printIR)
     llvm::errs() << *llvmModule;
 
-  if (failed(verifyOutputRecordingFunctions(llvmModule.get())))
+  if (failed(verifyOutputRecordingFunctions(llvmModule.get(), isBaseProfile)))
     return mlir::failure();
 
   if (isBaseProfile &&
