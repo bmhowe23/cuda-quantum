@@ -89,6 +89,7 @@ add_library(cudaq-mlir-runtime
     Environment.cpp
     JIT.cpp
     Logger.cpp
+    OptUtils.cpp
     RuntimeMLIR.cpp
 )
 set_property(GLOBAL APPEND PROPERTY CUDAQ_RUNTIME_LIBS cudaq-mlir-runtime)
@@ -97,6 +98,7 @@ set_source_files_properties(
     Environment.cpp
     JIT.cpp
     Logger.cpp
+    OptUtils.cpp
     RuntimeMLIR.cpp
 )
 

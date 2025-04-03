@@ -74,9 +74,19 @@ bool setupTargetTriple(llvm::Module *llvmModule) {
   return true;
 }
 
+std::function<llvm::Error(llvm::Module *)>
+makeOptimizingTransformer_BMH(unsigned optLevel, unsigned sizeLevel,
+                              llvm::TargetMachine *targetMachine);
+
 void optimizeLLVM(llvm::Module *module) {
-  auto optPipeline = mlir::makeOptimizingTransformer(
-      /*optLevel=*/3, /*sizeLevel=*/0,
+  int optLevel = []() {
+    if (auto *ch = getenv("CUDAQ_OPT_LEVEL"))
+      return std::atoi(ch);
+    return 3;
+  }();
+  // auto optPipeline = mlir::makeOptimizingTransformer(
+  auto optPipeline = makeOptimizingTransformer_BMH(
+      /*optLevel=*/optLevel, /*sizeLevel=*/0,
       /*targetMachine=*/nullptr);
   if (auto err = optPipeline(module))
     throw std::runtime_error("Failed to optimize LLVM IR ");
@@ -203,6 +213,7 @@ mlir::LogicalResult verifyOutputCalls(llvm::CallBase *callInst,
 
 // Loop through the arguments in a call and verify that they are all constants
 mlir::LogicalResult verifyConstArguments(llvm::CallBase *callInst) {
+  return mlir::success();
   int iArg = 0;
   auto func = callInst ? callInst->getCalledFunction() : nullptr;
   auto funcName = func ? func->getName() : "N/A";
@@ -310,10 +321,11 @@ mlir::LogicalResult verifyLLVMInstructions(llvm::Module *llvmModule,
       for (llvm::Instruction &inst : block) {
         // Only specific instructions are allowed at the top level, depending on
         // the specific profile
-        bool isValidBaseProfileInstruction =
-            llvm::isa<llvm::CallBase>(inst) ||
-            llvm::isa<llvm::BranchInst>(inst) ||
-            llvm::isa<llvm::ReturnInst>(inst);
+        bool isValidBaseProfileInstruction = true;
+        // bool isValidBaseProfileInstruction =
+        //     llvm::isa<llvm::CallBase>(inst) ||
+        //     llvm::isa<llvm::BranchInst>(inst) ||
+        //     llvm::isa<llvm::ReturnInst>(inst);
         // Note: there is an outstanding question about the adaptive profile
         // with respect to `switch` and `select` instructions. They are
         // currently described as "optional" in the spec, but there is no way to

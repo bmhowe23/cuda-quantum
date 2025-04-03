@@ -7,6 +7,7 @@
  ******************************************************************************/
 
 #include "PassDetails.h"
+#include "cudaq/Frontend/nvqpp/AttributeNames.h"
 #include "cudaq/Optimizer/Builder/Intrinsics.h"
 #include "cudaq/Optimizer/CodeGen/Passes.h"
 #include "cudaq/Optimizer/CodeGen/QIRFunctionNames.h"
@@ -55,9 +56,18 @@ struct VerifyQIRProfilePass
         auto funcName = funcNameAttr.getValue();
         if (!funcName.startswith("__quantum_") ||
             funcName.equals(cudaq::opt::QIRCustomOp)) {
-          call.emitOpError("unexpected call in QIR base profile");
-          passFailed = true;
-          return WalkResult::advance();
+          // Get the function op from the function name and check if it has the
+          // cudaq-devicecall attribute.
+          auto calleeFuncOp = func->getParentOfType<mlir::ModuleOp>()
+                                  .lookupSymbol<LLVM::LLVMFuncOp>(funcName);
+          if (calleeFuncOp &&
+              calleeFuncOp->hasAttr(cudaq::deviceCallAttrName)) {
+            return WalkResult::advance(); // ok to call device call
+          } else {
+            call.emitOpError("unexpected call in QIR base profile");
+            passFailed = true;
+            return WalkResult::advance();
+          }
         }
 
         // Check that qubits are unique values.
