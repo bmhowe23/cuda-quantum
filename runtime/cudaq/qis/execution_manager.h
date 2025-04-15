@@ -9,6 +9,7 @@
 #pragma once
 
 #include "common/CustomOp.h"
+#include "common/MeasureCounts.h"
 #include "common/NoiseModel.h"
 #include "common/QuditIdTracker.h"
 #include "cudaq/host_config.h"
@@ -55,8 +56,8 @@ public:
   measure_result(int res, std::size_t id) : result(res), uniqueId(id) {}
   measure_result(int res) : result(res) {}
 
-  operator int() { return result; }
-  operator bool() { return __nvqpp__MeasureResultBoolConversion(result); }
+  operator int() const { return result; }
+  operator bool() const { return __nvqpp__MeasureResultBoolConversion(result); }
 };
 #else
 /// When compiling with MLIR, we default to a boolean.

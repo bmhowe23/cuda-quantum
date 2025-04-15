@@ -9,6 +9,7 @@
 #pragma once
 
 #include <functional>
+#include <random>
 #include <set>
 #include <type_traits>
 #include <unordered_map>
@@ -17,7 +18,6 @@
 #include "operators/evaluation.h"
 #include "operators/operator_leafs.h"
 #include "operators/templates.h"
-#include "utils/cudaq_utils.h"
 #include "utils/matrix.h"
 
 namespace cudaq {
@@ -70,7 +70,7 @@ protected:
                 // terms)
   std::vector<std::vector<HandlerTy>> terms;
   std::vector<scalar_operator> coefficients;
-  bool is_default = false;
+  bool is_default = true;
 
   constexpr sum_op(bool is_default) : is_default(is_default){};
   sum_op(const sum_op<HandlerTy> &other, bool is_default, std::size_t size);
@@ -161,7 +161,7 @@ public:
   // A default initialized sum will act as both the additive
   // and multiplicative identity. To construct a true "0" value
   // (neutral element for addition only), use sum_op<T>::empty().
-  constexpr sum_op() : is_default(true){};
+  constexpr sum_op() = default;
 
   sum_op(std::size_t size);
 
@@ -189,10 +189,10 @@ public:
          const matrix_handler::commutation_behavior &behavior);
 
   // copy constructor
-  sum_op(const sum_op<HandlerTy> &other);
+  sum_op(const sum_op<HandlerTy> &other) = default;
 
   // move constructor
-  sum_op(sum_op<HandlerTy> &&other);
+  sum_op(sum_op<HandlerTy> &&other) = default;
 
   ~sum_op() = default;
 
@@ -215,10 +215,10 @@ public:
   sum_op<HandlerTy> &operator=(const sum_op<T> &other);
 
   // assignment operator
-  sum_op<HandlerTy> &operator=(const sum_op<HandlerTy> &other);
+  sum_op<HandlerTy> &operator=(const sum_op<HandlerTy> &other) = default;
 
   // move assignment operator
-  sum_op<HandlerTy> &operator=(sum_op<HandlerTy> &&other);
+  sum_op<HandlerTy> &operator=(sum_op<HandlerTy> &&other) = default;
 
   // evaluations
 
@@ -746,10 +746,11 @@ public:
   product_op<HandlerTy> &operator=(const product_op<T> &other);
 
   // assignment operator
-  product_op<HandlerTy> &operator=(const product_op<HandlerTy> &other);
+  product_op<HandlerTy> &
+  operator=(const product_op<HandlerTy> &other) = default;
 
   // move assignment operator
-  product_op<HandlerTy> &operator=(product_op<HandlerTy> &&other);
+  product_op<HandlerTy> &operator=(product_op<HandlerTy> &&other) = default;
 
   // evaluations
 

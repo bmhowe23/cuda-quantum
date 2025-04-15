@@ -277,7 +277,7 @@ EvalTy product_op<HandlerTy>::evaluate(
       EvalTy eval = arithmetics.evaluate(this->operators[op_idx]);
       prod = arithmetics.tensor(std::move(prod), std::move(eval));
     }
-    return std::move(prod);
+    return prod;
   }
 }
 
@@ -378,7 +378,7 @@ std::string product_op<HandlerTy>::get_term_id() const {
   std::string term_id;
   for (const auto &op : this->operators)
     term_id += op.unique_id();
-  return std::move(term_id);
+  return term_id;
 }
 
 template <typename HandlerTy>
@@ -604,47 +604,12 @@ product_op<HandlerTy>::operator=(const product_op<T> &other) {
   return *this;
 }
 
-template <typename HandlerTy>
-product_op<HandlerTy> &
-product_op<HandlerTy>::operator=(const product_op<HandlerTy> &other) {
-  if (this != &other) {
-    this->coefficient = other.coefficient;
-    this->operators = other.operators;
-  }
-  return *this;
-}
-
-template <typename HandlerTy>
-product_op<HandlerTy> &
-product_op<HandlerTy>::operator=(product_op<HandlerTy> &&other) {
-  if (this != &other) {
-    this->coefficient = std::move(other.coefficient);
-    this->operators = std::move(other.operators);
-  }
-  return *this;
-}
-
-#define INSTANTIATE_PRODUCT_ASSIGNMENTS(HandlerTy)                             \
-                                                                               \
-  template product_op<HandlerTy> &product_op<HandlerTy>::operator=(            \
-      const product_op<HandlerTy> &other);                                     \
-                                                                               \
-  template product_op<HandlerTy> &product_op<HandlerTy>::operator=(            \
-      product_op<HandlerTy> &&other);
-
 template product_op<matrix_handler> &
 product_op<matrix_handler>::operator=(const product_op<spin_handler> &other);
 template product_op<matrix_handler> &
 product_op<matrix_handler>::operator=(const product_op<boson_handler> &other);
 template product_op<matrix_handler> &
 product_op<matrix_handler>::operator=(const product_op<fermion_handler> &other);
-
-#if !defined(__clang__)
-INSTANTIATE_PRODUCT_ASSIGNMENTS(matrix_handler);
-INSTANTIATE_PRODUCT_ASSIGNMENTS(spin_handler);
-INSTANTIATE_PRODUCT_ASSIGNMENTS(boson_handler);
-INSTANTIATE_PRODUCT_ASSIGNMENTS(fermion_handler);
-#endif
 
 // evaluations
 
@@ -881,7 +846,7 @@ product_op<HandlerTy>::operator*(const product_op<HandlerTy> &other) const & {
                              this->operators.size() + other.operators.size());
   for (HandlerTy op : other.operators)
     prod.insert(std::move(op));
-  return std::move(prod);
+  return prod;
 }
 
 template <typename HandlerTy>
@@ -902,7 +867,7 @@ product_op<HandlerTy>::operator*(product_op<HandlerTy> &&other) const & {
                              this->operators.size() + other.operators.size());
   for (auto &&op : other.operators)
     prod.insert(std::move(op));
-  return std::move(prod);
+  return prod;
 }
 
 template <typename HandlerTy>
@@ -960,7 +925,7 @@ product_op<HandlerTy>::operator*(const sum_op<HandlerTy> &other) const {
         *this * product_op<HandlerTy>(other.coefficients[i], other.terms[i]);
     sum.insert(std::move(prod));
   }
-  return std::move(sum);
+  return sum;
 }
 
 #define PRODUCT_ADDITION_SUM(op)                                               \
@@ -977,7 +942,7 @@ product_op<HandlerTy>::operator*(const sum_op<HandlerTy> &other) const {
     for (auto &coeff : other.coefficients)                                     \
       sum.coefficients.push_back(op coeff);                                    \
     sum.insert(*this);                                                         \
-    return std::move(sum);                                                     \
+    return sum;                                                                \
   }                                                                            \
                                                                                \
   template <typename HandlerTy>                                                \
@@ -992,7 +957,7 @@ product_op<HandlerTy>::operator*(const sum_op<HandlerTy> &other) const {
     for (auto &coeff : other.coefficients)                                     \
       sum.coefficients.push_back(op coeff);                                    \
     sum.insert(std::move(*this));                                              \
-    return std::move(sum);                                                     \
+    return sum;                                                                \
   }                                                                            \
   template <typename HandlerTy>                                                \
   sum_op<HandlerTy> product_op<HandlerTy>::operator op(                        \
@@ -1001,7 +966,7 @@ product_op<HandlerTy>::operator*(const sum_op<HandlerTy> &other) const {
       return *this;                                                            \
     sum_op<HandlerTy> sum(op std::move(other));                                \
     sum.insert(*this);                                                         \
-    return std::move(sum);                                                     \
+    return sum;                                                                \
   }                                                                            \
                                                                                \
   template <typename HandlerTy>                                                \
@@ -1011,7 +976,7 @@ product_op<HandlerTy>::operator*(const sum_op<HandlerTy> &other) const {
       return *this;                                                            \
     sum_op<HandlerTy> sum(op std::move(other));                                \
     sum.insert(std::move(*this));                                              \
-    return std::move(sum);                                                     \
+    return sum;                                                                \
   }
 
 PRODUCT_ADDITION_SUM(+)
