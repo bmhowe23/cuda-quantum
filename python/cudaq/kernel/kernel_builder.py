@@ -271,7 +271,7 @@ class PyKernel(object):
         cc.register_dialect(self.ctx)
         cudaq_runtime.registerLLVMDialectTranslation(self.ctx)
 
-        self.metadata = {'conditionalOnMeasure': False}
+        self.conditionalOnMeasure = False
         self.regCounter = 0
         self.loc = Location.unknown(context=self.ctx)
         self.module = Module.create(loc=self.loc)
@@ -875,10 +875,8 @@ class PyKernel(object):
             for arg in args:
                 if isinstance(arg, cudaq_runtime.SpinOperatorTerm):
                     arg = arg.get_pauli_word()
-                elif hasattr(arg, "_to_spinop"):
-                    arg = arg._to_spinop()
                 if isinstance(arg, cudaq_runtime.SpinOperator):
-                    if arg.get_term_count() > 1:
+                    if arg.term_count > 1:
                         emitFatalError(
                             'exp_pauli operation requires a SpinOperator composed of a single term.'
                         )
@@ -1366,7 +1364,7 @@ class PyKernel(object):
                 function()
                 self.insertPoint = tmpIp
                 cc.ContinueOp([])
-            self.metadata['conditionalOnMeasure'] = True
+            self.conditionalOnMeasure = True
 
     def for_loop(self, start, stop, function):
         """Add a for loop that starts from the given `start` index, 

@@ -30,6 +30,7 @@ Deuteron
 Deutsch
 Doxygen
 FPGAs
+Fermion
 Fock
 Fortran
 Fourier
@@ -55,7 +56,7 @@ Jupyter
 JupyterLab
 Kagome
 Kraus
-Krylov
+Kutta
 LLVM
 LSB
 Libraries
@@ -128,6 +129,7 @@ UCCSD
 VQE
 Vazirani
 WSL
+Zener
 accessor
 acknowledgement
 adaptor
@@ -235,6 +237,7 @@ frontend
 frontends
 hadamard
 hamiltonian
+heisenberg
 homogenous
 iff
 increment
@@ -288,6 +291,7 @@ probability
 programmatically
 pybind
 qaoa
+qed
 quantize
 quantized
 qubit
@@ -306,6 +310,7 @@ scalable
 sexualized
 shifter
 shifters
+shors
 splitter
 splitters
 sqale
@@ -351,9 +356,11 @@ variadic
 variational
 vazirani
 vdots
+vectorization
 verifier
 vertices
 vqe
 waveforms
 wavefunction
 workflow
+zener
