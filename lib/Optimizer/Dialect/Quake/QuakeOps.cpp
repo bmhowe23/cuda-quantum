@@ -351,6 +351,13 @@ ParseResult quake::ApplyNoiseOp::parse(OpAsmParser &parser,
   return success();
 }
 
+LogicalResult quake::DetectorOp::verify() {
+  // Must have at least two measures.
+  if (getMeasures().size() < 2)
+    return emitOpError("must have at least two measures");
+  return success();
+}
+
 LogicalResult quake::ApplyNoiseOp::verify() {
   // Must have either a noise_func or a key and not both.
   if (!getNoiseFuncAttr()) {

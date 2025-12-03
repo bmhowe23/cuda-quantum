@@ -70,7 +70,14 @@ public:
 };
 #else
 /// When compiling with MLIR, we default to a boolean.
-using measure_result = bool;
+// using measure_result = int;
+struct measure_result {
+  std::size_t uniqueId = 0;
+  int result = 0;
+  measure_result(int res, std::size_t id) : uniqueId(id), result(res) {}
+  measure_result(int res) : result(res) {}
+  operator bool() const { return result != 0; }
+};
 #endif
 
 /// The ExecutionManager provides a base class describing a concrete sub-system

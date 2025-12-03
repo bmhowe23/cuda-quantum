@@ -564,6 +564,55 @@ bool QuakeBridgeVisitor::TraverseCastExpr(clang::CastExpr *x,
   if (!TraverseType(x->getType()))
     return false;
   assert(typeStack.size() == typeStackDepth + 1 && "must push a type");
+  // {{ edit_1 }}
+  // Special handling for cudaq::measure_result conversion.
+  // We must intercept traversal here because the standard traversal would
+  // visit the CXXMemberCallExpr (the conversion operator), which would
+  // trigger VisitCallExpr. VisitCallExpr would then crash because it expects
+  // a standard C++ object structure on the stack, but measure_result is now
+  // a primitive !quake.measure type.
+  if (x->getCastKind() == clang::CastKind::CK_UserDefinedConversion) {
+    if (auto *call = dyn_cast<clang::CXXMemberCallExpr>(x->getSubExpr())) {
+      if (auto *method =
+              dyn_cast<clang::CXXMethodDecl>(call->getCalleeDecl())) {
+        if (isInClassInNamespace(method, "measure_result", "cudaq")) {
+          // Traverse the implicit object argument (the measurement result)
+          if (auto *implicitObj = call->getImplicitObjectArgument()) {
+            if (!TraverseStmt(implicitObj))
+              return false;
+
+            auto measVal = popValue();
+            auto loc = toLocation(x);
+            if (isa<cc::PointerType>(measVal.getType()))
+              measVal = builder.create<cc::LoadOp>(loc, measVal);
+
+            if (isa<quake::MeasureType>(measVal.getType())) {
+              auto i1Ty = builder.getI1Type();
+              auto disc =
+                  builder.create<quake::DiscriminateOp>(loc, i1Ty, measVal);
+
+              auto castToTy =
+                  popType(); // Pop the type pushed at start of TraverseCastExpr
+              Value result = disc;
+              if (isa<IntegerType>(castToTy) && !castToTy.isInteger(1))
+                result = builder.create<cc::CastOp>(loc, castToTy, disc,
+                                                    cc::CastOpMode::Unsigned);
+
+              return pushValue(result);
+            } else {
+              // If not a MeasureType (e.g. library mode struct), fallback to
+              // standard behavior? But we've already popped the implicit
+              // object. Given we are in the compiler frontend where we mapped
+              // it to MeasureType, this path should ideally not happen for
+              // compiled kernels unless something is wrong. Re-push to try and
+              // recover if we fall through (unsafe, but better than crash).
+              pushValue(measVal);
+            }
+          }
+        }
+      }
+    }
+  }
   for (auto *sub : getStmtChildren(x))
     if (!TraverseStmt(sub))
       return false;
@@ -578,6 +627,8 @@ bool QuakeBridgeVisitor::VisitCastExpr(clang::CastExpr *x) {
   // ImplicitCastExpr in non-error cases.
   auto castToTy = popType();
   auto loc = toLocation(x);
+  llvm::errs() << "VisitCastExpr: " << castToTy
+               << "Cast Kind: " << x->getCastKind() << "\n";
   auto intToIntCast = [&](Location locSub, Value mlirVal) {
     clang::QualType srcTy = x->getSubExpr()->getType();
     // Check for and handle reference to integer cases.
@@ -609,10 +660,18 @@ bool QuakeBridgeVisitor::VisitCastExpr(clang::CastExpr *x) {
   }
   case clang::CastKind::CK_IntegralCast: {
     auto locSub = toLocation(x->getSubExpr());
-    auto result = intToIntCast(locSub, popValue());
+    auto v = popValue();
+    auto result = intToIntCast(locSub, v);
     assert(result && "integer conversion failed");
+    llvm::errs() << "IntegralCast: " << v << " to " << castToTy
+                 << " result: " << result << "\n";
     return result;
   }
+  // case clang::CastKind::CK_NoOp: {
+  //   auto value = popValue();
+  //   llvm::errs() << "NoOp: " << value.getType() << " to " << castToTy <<
+  //   "\n"; pushValue(value); return pushValue(value);
+  // }
   case clang::CastKind::CK_FunctionToPointerDecay:
   case clang::CastKind::CK_ArrayToPointerDecay:
   case clang::CastKind::CK_NoOp:
@@ -650,8 +709,16 @@ bool QuakeBridgeVisitor::VisitCastExpr(clang::CastExpr *x) {
   }
   case clang::CastKind::CK_UserDefinedConversion: {
     auto sub = popValue();
-    // castToTy is the converion function signature.
+    // castToTy is the conversion function signature.
+    llvm::errs() << "Sub type: " << sub.getType() << "\n";
+    llvm::errs() << "Cast to type: " << castToTy << "\n";
     castToTy = popType();
+    // auto i1Ty = builder.getI1Type();
+    // if (isa<quake::MeasureType>(sub.getType())) {
+    //   llvm::errs() << "Discriminating measure result\n";
+    //   return pushValue(builder.create<quake::DiscriminateOp>(loc, i1Ty,
+    //   sub));
+    // }
     if (isa<IntegerType>(castToTy) && isa<IntegerType>(sub.getType())) {
       auto locSub = toLocation(x->getSubExpr());
       bool result = intToIntCast(locSub, sub);
@@ -1634,6 +1701,26 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
       return false;
     }
 
+    if (funcName == "detector") {
+      SmallVector<Value> measures;
+      for (auto iter : llvm::enumerate(args)) {
+        auto a = iter.value();
+        Type aTy = a.getType();
+        if (auto measTy = dyn_cast<quake::MeasureType>(aTy)) {
+          measures.push_back(a);
+        } else {
+          // Print the type of the argument
+          llvm::errs() << "Argument type: ";
+          aTy.print(llvm::errs());
+          reportClangError(x, mangler,
+                           "detector argument types not supported: ");
+          return false;
+        }
+      }
+      builder.create<quake::DetectorOp>(loc, measures);
+      return true;
+    }
+
     if (funcName == "mx" || funcName == "my" || funcName == "mz") {
       // Measurements always return a bool or a std::vector<bool>.
       bool useStdvec =
@@ -1649,11 +1736,13 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
           return builder.create<quake::MyOp>(loc, measTy, args).getMeasOut();
         return builder.create<quake::MzOp>(loc, measTy, args).getMeasOut();
       }();
-      Type resTy = builder.getI1Type();
-      if (useStdvec)
-        resTy = cc::StdvecType::get(resTy);
-      return pushValue(
-          builder.create<quake::DiscriminateOp>(loc, resTy, measure));
+      llvm::errs() << "Measure: " << measure << "\n";
+      return pushValue(measure);
+      // Type resTy = builder.getI1Type();
+      // if (useStdvec)
+      //   resTy = cc::StdvecType::get(resTy);
+      // return pushValue(
+      //     builder.create<quake::DiscriminateOp>(loc, resTy, measure));
     }
 
     // Handle the quantum gate set.

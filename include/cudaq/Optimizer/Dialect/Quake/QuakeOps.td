@@ -532,6 +532,47 @@ def quake_ApplyNoiseOp : QuakeOp<"apply_noise", [AttrSizedOperandSegments]> {
   }];
 }
 
+def quake_DetectorOp : QuakeOp<"detector"> {
+  let summary = "Create a detector.";
+  let description = [{
+    This operation creates a detector.
+  }];
+
+  let arguments = (ins
+    Variadic<MeasureType>:$measures
+  );
+
+  let hasVerifier = 1;
+
+  // let builders = [
+  //   OpBuilder<(ins "mlir::StringRef":$noise_func,
+  //                  "mlir::ValueRange":$parameters,
+  //                  "mlir::ValueRange":$targets), [{
+  //     return build($_builder, $_state, mlir::TypeRange{},
+  //       mlir::FlatSymbolRefAttr::get($_builder.getContext(), noise_func), {},
+  //       parameters, targets);
+  //   }]>,
+  //   OpBuilder<(ins "mlir::FlatSymbolRefAttr":$noise_func,
+  //                  "mlir::ValueRange":$parameters,
+  //                  "mlir::ValueRange":$targets), [{
+  //     return build($_builder, $_state, mlir::TypeRange{}, noise_func, {},
+  //       parameters, targets);
+  //   }]>,
+  //   OpBuilder<(ins "mlir::Value":$key,
+  //                  "mlir::ValueRange":$parameters,
+  //                  "mlir::ValueRange":$targets), [{
+  //     return build($_builder, $_state, mlir::TypeRange{},
+  //       mlir::FlatSymbolRefAttr{}, key, parameters, targets);
+  //   }]>
+  // ];
+
+  // let extraClassDeclaration = [{
+  //   static constexpr mlir::StringRef getNoiseFuncAttrNameStr() {
+  //     return "noise_func";
+  //   }
+  // }];
+}
+
 //===----------------------------------------------------------------------===//
 // Memory and register conversion instructions: These operations are useful for
 // intermediate conversions between memory-SSA and value-SSA semantics and vice

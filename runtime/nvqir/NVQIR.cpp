@@ -1358,4 +1358,8 @@ void invokeU3RotationWithControlQubits(
       /*rotations=*/3, params, numControlOperands, isArrayAndLength, controls,
       /*targets=*/1, targets, reinterpret_cast<void (*)()>(QISFunction));
 }
+
+void __quantum__qis__create_detector(Result *result1, Result *result2) {
+  // FIXME
+}
 }

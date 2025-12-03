@@ -285,6 +285,22 @@ struct AllocaOpToIntRewrite : public OpConversionPattern<quake::AllocaOp> {
   }
 };
 
+struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quake::DetectorOp detector, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // FIXME
+    SmallVector<Value> args;
+    args.append(adaptor.getMeasures().begin(),
+                adaptor.getMeasures().begin() + 2);
+    rewriter.replaceOpWithNewOp<func::CallOp>(
+        detector, TypeRange{}, cudaq::opt::QISCreateDetector, args);
+    return success();
+  }
+};
+
 template <typename M>
 struct ApplyNoiseOpRewrite : public OpConversionPattern<quake::ApplyNoiseOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -1792,7 +1808,7 @@ struct FullQIR {
         /* Irregular quantum operators. */
         CustomUnitaryOpPattern<Self>, ExpPauliOpPattern<Self>,
         MeasurementOpPattern<Self>, ResetOpPattern<Self>,
-        ApplyNoiseOpRewrite<Self>,
+        ApplyNoiseOpRewrite<Self>, DetectorOpRewrite,
 
         /* Regular quantum operators. */
         QuantumGatePattern<Self, quake::HOp>,
