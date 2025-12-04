@@ -70,14 +70,7 @@ public:
 };
 #else
 /// When compiling with MLIR, we default to a boolean.
-// using measure_result = int;
-struct measure_result {
-  std::size_t uniqueId = 0;
-  int result = 0;
-  measure_result(int res, std::size_t id) : uniqueId(id), result(res) {}
-  measure_result(int res) : result(res) {}
-  operator bool() const { return result != 0; }
-};
+using measure_result = bool;
 #endif
 
 /// The ExecutionManager provides a base class describing a concrete sub-system
@@ -162,6 +155,8 @@ public:
   virtual void startAdjointRegion() = 0;
   /// End the adjoint region
   virtual void endAdjointRegion() = 0;
+
+  virtual void detector(std::int64_t result1, std::int64_t result2) = 0;
 
   /// Start a region of code where all operations will be controlled on the
   /// given qudits.

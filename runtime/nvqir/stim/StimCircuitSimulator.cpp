@@ -165,6 +165,11 @@ protected:
     return batch_size;
   }
 
+  void detector(std::int64_t result1, std::int64_t result2) override {
+    printf("detector: %ld %ld\n", result1, result2);
+    return;
+  }
+
   /// @brief Return the number of rows and columns needed for a Parity Check
   /// Matrix
   std::optional<std::pair<std::size_t, std::size_t>>

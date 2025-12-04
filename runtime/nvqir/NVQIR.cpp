@@ -1359,7 +1359,8 @@ void invokeU3RotationWithControlQubits(
       /*targets=*/1, targets, reinterpret_cast<void (*)()>(QISFunction));
 }
 
-void __quantum__qis__create_detector(Result *result1, Result *result2) {
-  // FIXME
+void __quantum__qis__create_detector(std::int64_t result1,
+                                     std::int64_t result2) {
+  nvqir::getCircuitSimulatorInternal()->detector(result1, result2);
 }
 }

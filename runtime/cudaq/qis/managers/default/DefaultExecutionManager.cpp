@@ -221,6 +221,10 @@ protected:
         })();
   }
 
+  void detector(std::int64_t result1, std::int64_t result2) override {
+    simulator()->detector(result1, result2);
+  }
+
   void applyNoise(const kraus_channel &channel,
                   const std::vector<QuditInfo> &targets) override {
     if (isInTracerMode())

@@ -1386,8 +1386,8 @@ void apply_noise(Args &&...args) {
       details::tuple_slice_last<qubit_arity>(std::forward_as_tuple(args...)));
 }
 
-inline void detector(measure_result result1, measure_result result2) {
-  // FIXME
+inline void detector(std::int64_t result1, std::int64_t result2) {
+  getExecutionManager()->detector(result1, result2);
 }
 
 } // namespace cudaq

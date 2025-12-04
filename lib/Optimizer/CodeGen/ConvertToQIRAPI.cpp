@@ -291,7 +291,7 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
   LogicalResult
   matchAndRewrite(quake::DetectorOp detector, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // FIXME
+    // FIXME - update for variadic arguments.
     SmallVector<Value> args;
     args.append(adaptor.getMeasures().begin(),
                 adaptor.getMeasures().begin() + 2);
