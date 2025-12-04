@@ -142,5 +142,10 @@ public:
   /// Note: Measurement Syndrome Matrix is defined in
   /// https://arxiv.org/pdf/2407.13826.
   std::optional<std::pair<std::size_t, std::size_t>> msm_dimensions;
+
+  /// @brief A vector of vectors of measurement indices. Each inner vector is a
+  /// vector of measurement indices for a given detector.
+  std::optional<std::vector<std::vector<std::int64_t>>>
+      detector_measurement_indices;
 };
 } // namespace cudaq

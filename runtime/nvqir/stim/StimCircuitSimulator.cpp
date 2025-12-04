@@ -166,12 +166,32 @@ protected:
   }
 
   void detector(std::int64_t *indices, std::size_t num_indices) override {
-    printf("detector: ");
-    for (std::size_t i = 0; i < num_indices; i++) {
-      printf("%ld ", indices[i]);
+    flushGateQueue();
+    if (num_indices < 2) {
+      throw std::runtime_error("Detector must have at least 2 indices");
     }
-    printf("\n");
-    return;
+    if (executionContext) {
+      auto &detector_measurement_indices =
+          executionContext->detector_measurement_indices;
+      if (!detector_measurement_indices) {
+        detector_measurement_indices.emplace();
+      }
+      std::vector<std::int64_t> indices_vector(num_indices);
+      for (std::size_t i = 0; i < num_indices; i++) {
+        if (indices[i] == 0) {
+          throw std::runtime_error("Detector index cannot be 0");
+        } else if (indices[i] > 0) {
+          indices_vector[i] = -indices[i];
+        } else if (-indices[i] > num_measurements) {
+          throw std::runtime_error(fmt::format(
+              "Detector index {} is out of range: num_measurements = {}",
+              indices[i], num_measurements));
+        } else {
+          indices_vector[i] = num_measurements + indices[i];
+        }
+      }
+      detector_measurement_indices->emplace_back(std::move(indices_vector));
+    }
   }
 
   /// @brief Return the number of rows and columns needed for a Parity Check
