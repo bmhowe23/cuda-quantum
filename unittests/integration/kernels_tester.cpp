@@ -494,4 +494,52 @@ CUDAQ_TEST(KernelsTester, msmTester_pauli2) {
   EXPECT_EQ(msm_prob_err_id[0], 0);
 }
 
+CUDAQ_TEST(KernelsTester, detectorTester) {
+  struct simple_test {
+    void operator()() __qpu__ {
+      cudaq::qvector q(2);
+      mz(q[0]);
+      mz(q[1]);
+      cudaq::detector(-2, -1); // (mz(q[0]), mz(q[1]))
+    }
+  };
+  cudaq::ExecutionContext ctx("moose");
+  cudaq::get_platform().set_exec_ctx(&ctx);
+  simple_test{}();
+  cudaq::get_platform().reset_exec_ctx();
+  ASSERT_TRUE(ctx.detector_measurement_indices);
+  EXPECT_EQ(ctx.detector_measurement_indices->size(), 1);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0).size(), 2);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[0], 0);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[1], 1);
+}
+
+CUDAQ_TEST(KernelsTester, detectorTester_loops) {
+  struct simple_test {
+    void operator()() __qpu__ {
+      cudaq::qvector q(2);
+      mz(q[0]);
+      mz(q[1]);
+      for (int i = 0; i < 10; i++) {
+        mz(q[0]);
+        mz(q[1]);
+        cudaq::detector(-4, -2); // q[0]
+        cudaq::detector(-3, -1); // q[1]
+      }
+    }
+  };
+  cudaq::ExecutionContext ctx("tracks");
+  cudaq::get_platform().set_exec_ctx(&ctx);
+  simple_test{}();
+  cudaq::get_platform().reset_exec_ctx();
+  ASSERT_TRUE(ctx.detector_measurement_indices);
+  EXPECT_EQ(ctx.detector_measurement_indices->size(), 20);
+  for (int i = 0; i < 20; i++) {
+    // 2 measurements per detector
+    EXPECT_EQ(ctx.detector_measurement_indices->at(i).size(), 2);
+    // E.g. 0,2 / 1,3 / 4,6 / 5,7 / ...
+    EXPECT_EQ(ctx.detector_measurement_indices->at(i)[0], i);
+    EXPECT_EQ(ctx.detector_measurement_indices->at(i)[1], i + 2);
+  }
+}
 #endif
