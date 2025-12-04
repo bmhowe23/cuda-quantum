@@ -18,6 +18,7 @@
 #include "runtime/common/py_ObserveResult.h"
 #include "runtime/common/py_Resources.h"
 #include "runtime/common/py_SampleResult.h"
+#include "runtime/cudaq/algorithms/py_detectors.h"
 #include "runtime/cudaq/algorithms/py_draw.h"
 #include "runtime/cudaq/algorithms/py_evolve.h"
 #include "runtime/cudaq/algorithms/py_observe_async.h"
@@ -121,6 +122,7 @@ PYBIND11_MODULE(_quakeDialects, m) {
   cudaq::bindPyDataClassRegistry(cudaqRuntime);
   cudaq::bindPyEvolve(cudaqRuntime);
   cudaq::bindEvolveResult(cudaqRuntime);
+  cudaq::bindPyDetectors(cudaqRuntime);
   cudaq::bindPyDraw(cudaqRuntime);
   cudaq::bindPyUnitary(cudaqRuntime);
   cudaq::bindPyRun(cudaqRuntime);

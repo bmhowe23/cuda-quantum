@@ -2703,6 +2703,15 @@ class PyASTBridge(ast.NodeVisitor):
                                         pauli=pauliWord)
                 return
 
+            if node.func.id == 'detector':
+                args = self.__groupValues(node.args, [(2, -1)])
+                args = [
+                    self.changeOperandToType(self.getIntegerType(64), a)
+                    for a in args
+                ]
+                quake.DetectorOp(args)
+                return
+
             if node.func.id in globalRegisteredOperations:
                 unitary = globalRegisteredOperations[node.func.id]
                 numTargets = int(np.log2(np.sqrt(unitary.size)))
