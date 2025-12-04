@@ -165,8 +165,12 @@ protected:
     return batch_size;
   }
 
-  void detector(std::int64_t result1, std::int64_t result2) override {
-    printf("detector: %ld %ld\n", result1, result2);
+  void detector(std::int64_t *indices, std::size_t num_indices) override {
+    printf("detector: ");
+    for (std::size_t i = 0; i < num_indices; i++) {
+      printf("%ld ", indices[i]);
+    }
+    printf("\n");
     return;
   }
 

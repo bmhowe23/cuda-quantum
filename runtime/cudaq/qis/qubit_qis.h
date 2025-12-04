@@ -1386,8 +1386,11 @@ void apply_noise(Args &&...args) {
       details::tuple_slice_last<qubit_arity>(std::forward_as_tuple(args...)));
 }
 
-inline void detector(std::int64_t result1, std::int64_t result2) {
-  getExecutionManager()->detector(result1, result2);
+// Only enable if int64_t is the type of the indices
+template <typename... Indices>
+inline void detector(Indices... indices) {
+  std::vector<std::int64_t> indices_vector({indices...});
+  getExecutionManager()->detector(indices_vector.data(), indices_vector.size());
 }
 
 } // namespace cudaq

@@ -1640,15 +1640,20 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
         auto a = iter.value();
         Type aTy = a.getType();
         if (isa<IntegerType>(aTy)) {
+          // If it is not i64, then convert it to i64 here.
+          if (aTy != builder.getI64Type()) {
+            a = builder.create<cudaq::cc::CastOp>(
+                loc, builder.getI64Type(), a, cudaq::cc::CastOpMode::Signed);
+          }
           measures.push_back(a);
-        } else {
-          // Print the type of the argument
-          llvm::errs() << "Argument type: ";
-          aTy.print(llvm::errs());
-          reportClangError(x, mangler,
-                           "detector argument types not supported: ");
-          return false;
+          continue;
         }
+
+        // Print the type of the argument
+        llvm::errs() << "Argument type: ";
+        aTy.print(llvm::errs());
+        reportClangError(x, mangler, "detector argument types not supported: ");
+        return false;
       }
       builder.create<quake::DetectorOp>(loc, measures);
       return true;

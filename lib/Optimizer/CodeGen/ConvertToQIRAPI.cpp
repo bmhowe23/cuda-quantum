@@ -291,12 +291,43 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
   LogicalResult
   matchAndRewrite(quake::DetectorOp detector, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // FIXME - update for variadic arguments.
-    SmallVector<Value> args;
-    args.append(adaptor.getMeasures().begin(),
-                adaptor.getMeasures().begin() + 2);
+    auto loc = detector.getLoc();
+    auto measures = adaptor.getMeasures();
+    auto numMeasures = measures.size();
+    auto i64Ty = rewriter.getI64Type();
+
+    Value numMeasuresVal =
+        rewriter.create<arith::ConstantIntOp>(loc, numMeasures, 64);
+
+    // Allocate array of i64
+    Value buffer =
+        rewriter.create<cudaq::cc::AllocaOp>(loc, i64Ty, numMeasuresVal);
+    auto ptrI64Ty = cudaq::cc::PointerType::get(i64Ty);
+
+    // The buffer is a pointer to an array, but the runtime function expects a
+    // pointer to i64.
+    Value bufferPtr = rewriter.create<cudaq::cc::CastOp>(loc, ptrI64Ty, buffer);
+
+    for (auto iter : llvm::enumerate(measures)) {
+      std::int32_t i = iter.index();
+      Value m = iter.value();
+
+      // Cast to i64 if needed
+      auto width = m.getType().getIntOrFloatBitWidth();
+      if (width < 64)
+        m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m,
+                                               cudaq::cc::CastOpMode::Unsigned);
+      else if (width > 64)
+        m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m);
+
+      auto ptr = rewriter.create<cudaq::cc::ComputePtrOp>(
+          loc, ptrI64Ty, buffer, ArrayRef<cudaq::cc::ComputePtrArg>{i});
+      rewriter.create<cudaq::cc::StoreOp>(loc, m, ptr);
+    }
+
     rewriter.replaceOpWithNewOp<func::CallOp>(
-        detector, TypeRange{}, cudaq::opt::QISCreateDetector, args);
+        detector, TypeRange{}, cudaq::opt::QISCreateDetector,
+        ValueRange{bufferPtr, numMeasuresVal});
     return success();
   }
 };

@@ -151,7 +151,9 @@ public:
   /// https://arxiv.org/pdf/2407.13826.
   virtual void generateMSM() {}
 
-  virtual void detector(std::int64_t result1, std::int64_t result2) { return; }
+  virtual void detector(std::int64_t *indices, std::size_t num_indices) {
+    return;
+  }
 
   /// @brief Apply exp(-i theta PauliTensorProd) to the underlying state.
   /// This must be provided by subclasses.

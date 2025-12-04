@@ -221,8 +221,8 @@ protected:
         })();
   }
 
-  void detector(std::int64_t result1, std::int64_t result2) override {
-    simulator()->detector(result1, result2);
+  void detector(std::int64_t *indices, std::size_t num_indices) override {
+    simulator()->detector(indices, num_indices);
   }
 
   void applyNoise(const kraus_channel &channel,
