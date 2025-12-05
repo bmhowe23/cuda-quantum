@@ -172,6 +172,22 @@ protected:
       throw std::runtime_error("Detector must have at least 2 indices");
     }
     if (executionContext) {
+      // There is no need to send this to Stim yet, so we do not call
+      // applyOpToSims right now. Therefore, we append the instruction to the
+      // trace here.
+      {
+        std::stringstream ss;
+        ss << "DETECTOR";
+        for (std::size_t i = 0; i < num_indices; i++) {
+          if (indices[i] < 0) {
+            ss << " rec[" << indices[i] << "]";
+          } else {
+            // TODO
+          }
+        }
+        executionContext->kernelTrace.appendInstruction(ss.str(), {}, {},
+                                                        {QuditInfo(2, 0)});
+      }
       auto &detector_measurement_indices =
           executionContext->detector_measurement_indices;
       if (!detector_measurement_indices) {
@@ -307,6 +323,10 @@ protected:
     tempCircuit.safe_append_u(gate_name, targets);
     tableau->safe_do_circuit(tempCircuit);
     sampleSim->safe_do_circuit(tempCircuit);
+    if (executionContext) {
+      executionContext->kernelTrace.appendInstruction(tempCircuit.str(), {}, {},
+                                                      {QuditInfo(2, 0)});
+    }
   }
 
   /// @brief Apply the noise channel on \p qubits
@@ -405,6 +425,13 @@ protected:
         // Only apply the noise operations to the sample simulator (not the
         // Tableau simulator).
         sampleSim->safe_do_circuit(noiseOps);
+
+        // Since we do not call applyOpToSims here, we append the instruction to
+        // the trace here.
+        if (executionContext) {
+          executionContext->kernelTrace.appendInstruction(
+              noiseOps.str(), {}, {}, {QuditInfo(2, 0)});
+        }
 
         // Increment the error count by the number of mechanisms
         msm_err_count += res->params.size();
