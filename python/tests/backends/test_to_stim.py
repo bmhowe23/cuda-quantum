@@ -67,3 +67,12 @@ def test_with_noise_and_arguments():
     noise_model = cudaq.NoiseModel()
     stim_circuit_str = cudaq.to_stim(with_noise_and_arguments, 0.25, noise_model=noise_model)
     assert stim_circuit_str == "X_ERROR(0.25) 0\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\n"
+
+def test_with_invalid_target():
+    cudaq.set_target("qpp-cpu")
+    def invalid_target_test():
+        q = cudaq.qubit()
+        mz(q)
+    with pytest.raises(RuntimeError):
+        cudaq.to_stim(invalid_target_test)
+        

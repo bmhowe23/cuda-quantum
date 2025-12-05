@@ -21,12 +21,17 @@
 namespace py = pybind11;
 
 namespace cudaq {
-void bindPyToStim(py::module &mod) {
+void bindPyToStim(py::module &mod, LinkedLibraryHolder &holder) {
   mod.def(
       "to_stim",
-      [&](py::object kernel, py::args args, std::optional<noise_model> noise_model) {
+      [&](py::object kernel, py::args args,
+          std::optional<noise_model> noise_model) {
         if (py::hasattr(kernel, "compile"))
           kernel.attr("compile")();
+        // Verify that the target is stim
+        if (holder.getTarget().name != "stim")
+          throw std::runtime_error(
+              "Target is not stim, cannot convert to Stim circuit");
         auto &platform = cudaq::get_platform();
         auto kernelName = kernel.attr("name").cast<std::string>();
         auto kernelMod = kernel.attr("module").cast<MlirModule>();

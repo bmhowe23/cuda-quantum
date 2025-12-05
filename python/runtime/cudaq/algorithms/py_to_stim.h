@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "utils/LinkedLibraryHolder.h"
 #include "utils/OpaqueArguments.h"
 #include "mlir/Bindings/Python/PybindAdaptors.h"
 #include <pybind11/pybind11.h>
@@ -15,5 +16,5 @@
 namespace py = pybind11;
 
 namespace cudaq {
-void bindPyToStim(py::module &mod);
+void bindPyToStim(py::module &mod, LinkedLibraryHolder &holder);
 } // namespace cudaq
