@@ -167,6 +167,7 @@ protected:
 
   void detector(std::int64_t *indices, std::size_t num_indices) override {
     flushGateQueue();
+    flushAnySamplingTasks();
     if (num_indices < 2) {
       throw std::runtime_error("Detector must have at least 2 indices");
     }
