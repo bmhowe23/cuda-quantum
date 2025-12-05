@@ -34,7 +34,9 @@ def test_basic():
     stim_circuit_str = cudaq.to_stim(mykernel)
     assert stim_circuit_str == "M 0\nM 1\nDETECTOR rec[-2] rec[-1]\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\n"
 
+
 def test_with_noise():
+
     @cudaq.kernel
     def with_noise():
         q = cudaq.qubit()
@@ -51,9 +53,11 @@ def test_with_noise():
     stim_circuit_str = cudaq.to_stim(with_noise, noise_model=noise_model)
     assert stim_circuit_str == "X_ERROR(0.1) 0\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\n"
 
+
 def test_with_noise_and_arguments():
+
     @cudaq.kernel
-    def with_noise_and_arguments(p : float):
+    def with_noise_and_arguments(p: float):
         q = cudaq.qubit()
         r = cudaq.qubit()
         cudaq.apply_noise(cudaq.XError, p, q)
@@ -65,14 +69,31 @@ def test_with_noise_and_arguments():
         detector(-2, -1)
 
     noise_model = cudaq.NoiseModel()
-    stim_circuit_str = cudaq.to_stim(with_noise_and_arguments, 0.25, noise_model=noise_model)
+    stim_circuit_str = cudaq.to_stim(with_noise_and_arguments,
+                                     0.25,
+                                     noise_model=noise_model)
     assert stim_circuit_str == "X_ERROR(0.25) 0\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\nM 0\nM 1\nDETECTOR rec[-2] rec[-1]\n"
+
+
+def test_cnot():
+
+    @cudaq.kernel
+    def cnot_kernel_test():
+        q = cudaq.qubit()
+        r = cudaq.qubit()
+        cx(q, r)
+        mz(q)
+
+    stim_circuit_str = cudaq.to_stim(cnot_kernel_test)
+    assert stim_circuit_str == "CX 0 1\nM 0\n"
+
 
 def test_with_invalid_target():
     cudaq.set_target("qpp-cpu")
+
     def invalid_target_test():
         q = cudaq.qubit()
         mz(q)
+
     with pytest.raises(RuntimeError):
         cudaq.to_stim(invalid_target_test)
-        
