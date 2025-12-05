@@ -18,7 +18,7 @@ def setTarget():
     cudaq.set_target(old_target)
 
 
-def test_basic():
+def test_basic_with_detectors():
 
     @cudaq.kernel
     def mykernel():
@@ -89,6 +89,7 @@ def test_cnot():
 
 
 def test_with_invalid_target():
+    old_target = cudaq.get_target()
     cudaq.set_target("qpp-cpu")
 
     def invalid_target_test():
@@ -97,3 +98,5 @@ def test_with_invalid_target():
 
     with pytest.raises(RuntimeError):
         cudaq.to_stim(invalid_target_test)
+
+    cudaq.set_target(old_target)
