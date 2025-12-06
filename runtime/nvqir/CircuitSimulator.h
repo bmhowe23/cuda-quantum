@@ -151,7 +151,7 @@ public:
   /// https://arxiv.org/pdf/2407.13826.
   virtual void generateMSM() {}
 
-  virtual void detector(std::int64_t *indices, std::size_t num_indices) {
+  virtual void detector(const std::int64_t *indices, std::size_t num_indices) {
     return;
   }
 

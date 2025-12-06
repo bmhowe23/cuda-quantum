@@ -1649,6 +1649,13 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
           continue;
         }
 
+        if (auto stdvecTy = dyn_cast<cudaq::cc::StdvecType>(aTy)) {
+          if (isa<IntegerType>(stdvecTy.getElementType())) {
+            measures.push_back(a);
+            continue;
+          }
+        }
+
         // Print the type of the argument
         llvm::errs() << "Argument type: ";
         aTy.print(llvm::errs());

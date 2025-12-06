@@ -514,6 +514,26 @@ CUDAQ_TEST(KernelsTester, detectorTester) {
   EXPECT_EQ(ctx.detector_measurement_indices->at(0)[1], 1);
 }
 
+CUDAQ_TEST(KernelsTester, detectorTester_stdvec) {
+  struct simple_test {
+    void operator()() __qpu__ {
+      cudaq::qvector q(2);
+      mz(q[0]);
+      mz(q[1]);
+      cudaq::detector(std::vector<int64_t>{-2, -1}); // (mz(q[0]), mz(q[1]))
+    }
+  };
+  cudaq::ExecutionContext ctx("berry");
+  cudaq::get_platform().set_exec_ctx(&ctx);
+  simple_test{}();
+  cudaq::get_platform().reset_exec_ctx();
+  ASSERT_TRUE(ctx.detector_measurement_indices);
+  EXPECT_EQ(ctx.detector_measurement_indices->size(), 1);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0).size(), 2);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[0], 0);
+  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[1], 1);
+}
+
 CUDAQ_TEST(KernelsTester, detectorTester_loops) {
   struct simple_test {
     void operator()() __qpu__ {

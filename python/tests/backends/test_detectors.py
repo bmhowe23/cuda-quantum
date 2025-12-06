@@ -35,6 +35,37 @@ def test_basic():
     assert dets == [[0, 1], [2, 3]]
 
 
+def test_detector_stdvec():
+
+    @cudaq.kernel
+    def mykernel():
+        q = cudaq.qubit()
+        r = cudaq.qubit()
+        mz(q)
+        mz(r)
+        detector([-2, -1])
+        mz(q)
+        mz(r)
+        detector([-2, -1])
+
+    dets = cudaq.detectors(mykernel)
+    assert dets == [[0, 1], [2, 3]]
+
+
+def test_detector_stdvec_single_element():
+
+    @cudaq.kernel
+    def mykernel():
+        q = cudaq.qubit()
+        r = cudaq.qubit()
+        mz(q)
+        mz(r)
+        detector([-2])
+
+    dets = cudaq.detectors(mykernel)
+    assert dets == [[0]]
+
+
 def test_detector_loops():
 
     @cudaq.kernel

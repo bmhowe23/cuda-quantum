@@ -296,33 +296,56 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
     auto numMeasures = measures.size();
     auto i64Ty = rewriter.getI64Type();
 
-    Value numMeasuresVal =
-        rewriter.create<arith::ConstantIntOp>(loc, numMeasures, 64);
+    if (numMeasures == 0)
+      return detector.emitOpError("must have at least one measure");
 
-    // Allocate array of i64
-    Value buffer =
-        rewriter.create<cudaq::cc::AllocaOp>(loc, i64Ty, numMeasuresVal);
-    auto ptrI64Ty = cudaq::cc::PointerType::get(i64Ty);
+    Value numMeasuresVal;
+    if (isa<cudaq::cc::StdvecType>(measures[0].getType())) {
+      numMeasuresVal = rewriter.create<cudaq::cc::StdvecSizeOp>(
+          loc, rewriter.getI64Type(), measures[0]);
+    } else {
+      numMeasuresVal =
+          rewriter.create<arith::ConstantIntOp>(loc, numMeasures, 64);
+    }
 
-    // The buffer is a pointer to an array, but the runtime function expects a
-    // pointer to i64.
-    Value bufferPtr = rewriter.create<cudaq::cc::CastOp>(loc, ptrI64Ty, buffer);
+    Value bufferPtr;
+    if (auto stdVecTy =
+            dyn_cast<cudaq::cc::StdvecType>(measures[0].getType())) {
+      // Get the element type of the std::vector.
+      auto elementTy = stdVecTy.getElementType();
+      if (elementTy != i64Ty) {
+        return detector.emitOpError(
+            "std::vector<int64_t> argument must be i64");
+      }
 
-    for (auto iter : llvm::enumerate(measures)) {
-      std::int32_t i = iter.index();
-      Value m = iter.value();
+      bufferPtr = rewriter.create<cudaq::cc::StdvecDataOp>(
+          loc, cudaq::cc::PointerType::get(i64Ty), measures[0]);
+    } else {
+      // Allocate array of i64
+      Value buffer =
+          rewriter.create<cudaq::cc::AllocaOp>(loc, i64Ty, numMeasuresVal);
+      auto ptrI64Ty = cudaq::cc::PointerType::get(i64Ty);
 
-      // Cast to i64 if needed
-      auto width = m.getType().getIntOrFloatBitWidth();
-      if (width < 64)
-        m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m,
-                                               cudaq::cc::CastOpMode::Unsigned);
-      else if (width > 64)
-        m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m);
+      // The buffer is a pointer to an array, but the runtime function expects a
+      // pointer to i64.
+      bufferPtr = rewriter.create<cudaq::cc::CastOp>(loc, ptrI64Ty, buffer);
 
-      auto ptr = rewriter.create<cudaq::cc::ComputePtrOp>(
-          loc, ptrI64Ty, buffer, ArrayRef<cudaq::cc::ComputePtrArg>{i});
-      rewriter.create<cudaq::cc::StoreOp>(loc, m, ptr);
+      for (auto iter : llvm::enumerate(measures)) {
+        std::int32_t i = iter.index();
+        Value m = iter.value();
+
+        // Cast to i64 if needed
+        auto width = m.getType().getIntOrFloatBitWidth();
+        if (width < 64)
+          m = rewriter.create<cudaq::cc::CastOp>(
+              loc, i64Ty, m, cudaq::cc::CastOpMode::Unsigned);
+        else if (width > 64)
+          m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m);
+
+        auto ptr = rewriter.create<cudaq::cc::ComputePtrOp>(
+            loc, ptrI64Ty, buffer, ArrayRef<cudaq::cc::ComputePtrArg>{i});
+        rewriter.create<cudaq::cc::StoreOp>(loc, m, ptr);
+      }
     }
 
     rewriter.replaceOpWithNewOp<func::CallOp>(

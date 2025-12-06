@@ -539,7 +539,7 @@ def quake_DetectorOp : QuakeOp<"detector"> {
   }];
 
   let arguments = (ins
-    Variadic<AnyInteger>:$measures
+    Variadic<AnyTypeOf<[AnyInteger, StdvecOf<[AnyInteger]>]>>:$measures
   );
 
   let hasVerifier = 1;

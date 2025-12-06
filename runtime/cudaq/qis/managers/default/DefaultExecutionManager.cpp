@@ -221,7 +221,7 @@ protected:
         })();
   }
 
-  void detector(std::int64_t *indices, std::size_t num_indices) override {
+  void detector(const std::int64_t *indices, std::size_t num_indices) override {
     simulator()->detector(indices, num_indices);
   }
 
