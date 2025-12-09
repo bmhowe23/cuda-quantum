@@ -127,7 +127,6 @@ static constexpr const char QISConvertArrayToStdvec[] =
 static constexpr const char QISFreeConvertedStdvec[] =
     "__quantum__qis__free_converted_stdvector";
 
-static constexpr const char QISCreateDetector[] =
-    "__quantum__qis__create_detector";
+static constexpr const char QISDetector[] = "__quantum__qis__detector";
 
 } // namespace cudaq::opt

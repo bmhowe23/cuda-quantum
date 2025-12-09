@@ -349,7 +349,7 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
     }
 
     rewriter.replaceOpWithNewOp<func::CallOp>(
-        detector, TypeRange{}, cudaq::opt::QISCreateDetector,
+        detector, TypeRange{}, cudaq::opt::QISDetector,
         ValueRange{bufferPtr, numMeasuresVal});
     return success();
   }
