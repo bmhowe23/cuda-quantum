@@ -245,7 +245,6 @@ draw = cudaq_runtime.draw
 get_unitary = cudaq_runtime.get_unitary
 run = cudaq_runtime.run
 estimate_resources = cudaq_runtime.estimate_resources
-trace_kernel = cudaq_runtime.trace_kernel
 detectors = cudaq_runtime.detectors
 translate = cudaq_runtime.translate
 to_stim = cudaq_runtime.to_stim

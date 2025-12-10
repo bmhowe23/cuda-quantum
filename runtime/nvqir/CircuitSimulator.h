@@ -1432,11 +1432,8 @@ public:
     if (handleBasicSampling(qubitIdx, registerName))
       return true;
 
-    if (isInTracerMode()) {
-      executionContext->kernelTrace.appendInstruction(
-          "mz", {}, {}, {cudaq::QuditInfo(2, qubitIdx)});
+    if (isInTracerMode())
       return true;
-    }
 
     // Get the actual measurement from the subtype measureQubit implementation
     auto measureResult = measureQubit(qubitIdx);

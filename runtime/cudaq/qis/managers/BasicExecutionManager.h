@@ -272,11 +272,8 @@ public:
 
   int measure(const cudaq::QuditInfo &target,
               const std::string registerName = "") override {
-    if (isInTracerMode()) {
-      synchronize();
-      executionContext->kernelTrace.appendInstruction("mz", {}, {}, {target});
+    if (isInTracerMode())
       return 0;
-    }
 
     // We hit a measure, need to exec / clear instruction queue
     synchronize();
