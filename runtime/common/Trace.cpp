@@ -24,6 +24,5 @@ void cudaq::Trace::appendInstruction(std::string_view name,
   if (!controls.empty())
     maxID = std::max(maxID, findMaxID(controls));
   numQudits = std::max(numQudits, maxID + 1);
-  instructions.emplace_back(name, std::move(params), std::move(controls),
-                            std::move(targets));
+  instructions.emplace_back(name, params, controls, targets);
 }
