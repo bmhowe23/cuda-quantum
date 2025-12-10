@@ -8,6 +8,7 @@
 
 import cudaq
 import pytest
+import os
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -88,6 +89,74 @@ def test_detector_loops():
         # E.g. 0,2 / 1,3 / 4,6 / 5,7 / ...
         assert dets[i][0] == i
         assert dets[i][1] == i + 2
+
+
+def test_detector_error_no_args():
+
+    @cudaq.kernel
+    def mykernel():
+        detector()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        cudaq.detectors(mykernel)
+    assert "missing value" in str(excinfo.value)
+
+
+def test_detector_subkernel():
+
+    @cudaq.kernel
+    def sub():
+        detector(-1)
+
+    @cudaq.kernel
+    def main():
+        q = cudaq.qubit()
+        mz(q)
+        sub()
+
+    dets = cudaq.detectors(main)
+    # mz(q) is index 0. detector(-1) refers to index 0.
+    assert dets == [[0]]
+
+
+def test_detector_positive_args():
+
+    @cudaq.kernel
+    def mykernel():
+        q = cudaq.qubit()
+        mz(q)
+        detector(5)
+        detector(10, -1)
+
+    dets = cudaq.detectors(mykernel)
+    # detector(5) -> [-5]
+    # detector(10, -1) -> [-10, 0] (since -1 refers to index 0)
+    assert dets == [[-5], [-10, 0]]
+
+
+def test_detector_error_out_of_bounds():
+
+    @cudaq.kernel
+    def mykernel():
+        detector(-1)
+
+    # Should fail because there are no measurements
+    with pytest.raises(RuntimeError) as excinfo:
+        cudaq.detectors(mykernel)
+    assert "Detector measurement index is negative" in str(excinfo.value)
+
+
+def test_detector_dynamic_args():
+
+    @cudaq.kernel
+    def mykernel(i: int):
+        q = cudaq.qubit()
+        mz(q)
+        detector(i)
+
+    # detector(-1) -> index 0
+    dets = cudaq.detectors(mykernel, -1)
+    assert dets == [[0]]
 
 
 # leave for gdb debugging
