@@ -1432,8 +1432,11 @@ public:
     if (handleBasicSampling(qubitIdx, registerName))
       return true;
 
-    if (isInTracerMode())
+    if (isInTracerMode()) {
+      executionContext->kernelTrace.appendInstruction(
+          "mz", {}, {}, {cudaq::QuditInfo(2, qubitIdx)});
       return true;
+    }
 
     // Get the actual measurement from the subtype measureQubit implementation
     auto measureResult = measureQubit(qubitIdx);
@@ -1514,7 +1517,19 @@ public:
       flushGateQueue();
     }
   }
-
+  void detector(const std::int64_t *indices, std::size_t num_indices) override {
+    flushGateQueue();
+    flushAnySamplingTasks();
+    if (isInTracerMode()) {
+      std::vector<double> params(num_indices);
+      for (std::size_t i = 0; i < num_indices; i++) {
+        params[i] = indices[i];
+      }
+      cudaq::QuditInfo dummyTarget(2, 0);
+      executionContext->kernelTrace.appendInstruction("detector", params, {},
+                                                      {dummyTarget});
+    }
+  }
 }; // namespace nvqir
 } // namespace nvqir
 

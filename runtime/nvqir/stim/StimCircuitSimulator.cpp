@@ -60,6 +60,10 @@ protected:
   /// for speed)
   bool is_msm_mode = false;
 
+  bool isToStimMode() const {
+    return executionContext && executionContext->name == "to_stim";
+  }
+
   std::optional<StimNoiseType>
   isValidStimNoiseChannel(const kraus_channel &channel) const {
 
@@ -166,12 +170,12 @@ protected:
   }
 
   void detector(const std::int64_t *indices, std::size_t num_indices) override {
-    flushGateQueue();
-    flushAnySamplingTasks();
+    // Call the base class detector method first.
+    CircuitSimulatorBase::detector(indices, num_indices);
     if (num_indices < 1) {
       throw std::runtime_error("Detector must have at least 1 index");
     }
-    if (executionContext) {
+    if (isToStimMode()) {
       // There is no need to send this to Stim yet, so we do not call
       // applyOpToSims right now. Therefore, we append the instruction to the
       // trace here.
@@ -182,32 +186,14 @@ protected:
           if (indices[i] < 0) {
             ss << " rec[" << indices[i] << "]";
           } else {
-            // TODO
+            throw std::runtime_error(
+                "Detector index cannot be positive when running with 'to_stim' "
+                "execution context");
           }
         }
         executionContext->kernelTrace.appendInstruction(ss.str(), {}, {},
                                                         {QuditInfo(2, 0)});
       }
-      auto &detector_measurement_indices =
-          executionContext->detector_measurement_indices;
-      if (!detector_measurement_indices) {
-        detector_measurement_indices.emplace();
-      }
-      std::vector<std::int64_t> indices_vector(num_indices);
-      for (std::size_t i = 0; i < num_indices; i++) {
-        if (indices[i] == 0) {
-          throw std::runtime_error("Detector index cannot be 0");
-        } else if (indices[i] > 0) {
-          indices_vector[i] = -indices[i];
-        } else if (-indices[i] > num_measurements) {
-          throw std::runtime_error(fmt::format(
-              "Detector index {} is out of range: num_measurements = {}",
-              indices[i], num_measurements));
-        } else {
-          indices_vector[i] = num_measurements + indices[i];
-        }
-      }
-      detector_measurement_indices->emplace_back(std::move(indices_vector));
     }
   }
 
@@ -323,7 +309,7 @@ protected:
     tempCircuit.safe_append_u(gate_name, targets);
     tableau->safe_do_circuit(tempCircuit);
     sampleSim->safe_do_circuit(tempCircuit);
-    if (executionContext) {
+    if (isToStimMode()) {
       executionContext->kernelTrace.appendInstruction(tempCircuit.str(), {}, {},
                                                       {QuditInfo(2, 0)});
     }
@@ -428,7 +414,7 @@ protected:
 
         // Since we do not call applyOpToSims here, we append the instruction to
         // the trace here.
-        if (executionContext) {
+        if (isToStimMode()) {
           executionContext->kernelTrace.appendInstruction(
               noiseOps.str(), {}, {}, {QuditInfo(2, 0)});
         }

@@ -6,13 +6,10 @@
  * the terms of the Apache License 2.0 which accompanies this distribution.    *
  ******************************************************************************/
 
-#include "common/Resources.h"
+#include "cudaq/algorithms/detectors.h"
 #include "runtime/cudaq/platform/py_alt_launch_kernel.h"
 #include "utils/LinkedLibraryHolder.h"
 #include "utils/OpaqueArguments.h"
-#include "mlir/Bindings/Python/PybindAdaptors.h"
-#include "mlir/CAPI/IR.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include <fmt/core.h>
 #include <pybind11/functional.h>
@@ -34,22 +31,13 @@ void bindPyDetectors(py::module &mod) {
         std::unique_ptr<OpaqueArguments> argData(
             toOpaqueArgs(args, kernelMod, kernelName));
 
-        auto ctx = std::make_unique<ExecutionContext>("detectors", 1);
+        auto ctx = std::make_unique<ExecutionContext>("tracer", 1);
         ctx->kernelName = kernelName;
-        // Indicate that this is not an async exec
-        ctx->asyncExec = false;
-
-        // Set the platform
         platform.set_exec_ctx(ctx.get());
-
         pyAltLaunchKernel(kernelName, kernelMod, *argData, {});
-
         platform.reset_exec_ctx();
-
-        if (!ctx->detector_measurement_indices) {
-          throw std::runtime_error("No detector measurement indices found");
-        }
-        return *ctx->detector_measurement_indices;
+        const auto &trace = ctx->kernelTrace;
+        return cudaq::__internal__::traceToDetectorMzIndices(trace);
       },
       py::arg("kernel"), py::kw_only(),
       R"#(Identify detectors in the given quantum kernel expression and returns

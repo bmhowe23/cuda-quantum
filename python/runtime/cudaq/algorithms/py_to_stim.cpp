@@ -41,9 +41,6 @@ void bindPyToStim(py::module &mod, LinkedLibraryHolder &holder) {
 
         auto ctx = std::make_unique<ExecutionContext>("to_stim", 1);
         ctx->kernelName = kernelName;
-        // Indicate that this is not an async exec
-        ctx->asyncExec = false;
-
         if (noise_model.has_value()) {
           if (platform.is_remote())
             throw std::runtime_error(
@@ -51,11 +48,8 @@ void bindPyToStim(py::module &mod, LinkedLibraryHolder &holder) {
           platform.set_noise(&noise_model.value());
         }
 
-        // Set the platform
         platform.set_exec_ctx(ctx.get());
-
         pyAltLaunchKernel(kernelName, kernelMod, *argData, {});
-
         platform.reset_exec_ctx();
 
         std::stringstream ss;

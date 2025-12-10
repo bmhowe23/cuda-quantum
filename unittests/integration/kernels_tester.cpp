@@ -503,15 +503,28 @@ CUDAQ_TEST(KernelsTester, detectorTester) {
       cudaq::detector(-2, -1); // (mz(q[0]), mz(q[1]))
     }
   };
-  cudaq::ExecutionContext ctx("moose");
+  cudaq::ExecutionContext ctx("tracer");
   cudaq::get_platform().set_exec_ctx(&ctx);
   simple_test{}();
   cudaq::get_platform().reset_exec_ctx();
-  ASSERT_TRUE(ctx.detector_measurement_indices);
-  EXPECT_EQ(ctx.detector_measurement_indices->size(), 1);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0).size(), 2);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[0], 0);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[1], 1);
+  const auto &trace = ctx.kernelTrace;
+  for (std::size_t i = 0; const auto &instruction : trace) {
+    if (i == 0) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 0)});
+    } else if (i == 1) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 1)});
+    } else if (i == 2) {
+      EXPECT_EQ(instruction.name, "detector");
+      EXPECT_EQ(instruction.params, (std::vector<double>{-2.0, -1.0}));
+    } else {
+      FAIL() << "Unexpected instruction at index " << i;
+    }
+    i++;
+  }
 }
 
 CUDAQ_TEST(KernelsTester, detectorTester_stdvec) {
@@ -523,15 +536,28 @@ CUDAQ_TEST(KernelsTester, detectorTester_stdvec) {
       cudaq::detector(std::vector<int64_t>{-2, -1}); // (mz(q[0]), mz(q[1]))
     }
   };
-  cudaq::ExecutionContext ctx("berry");
+  cudaq::ExecutionContext ctx("tracer");
   cudaq::get_platform().set_exec_ctx(&ctx);
   simple_test{}();
   cudaq::get_platform().reset_exec_ctx();
-  ASSERT_TRUE(ctx.detector_measurement_indices);
-  EXPECT_EQ(ctx.detector_measurement_indices->size(), 1);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0).size(), 2);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[0], 0);
-  EXPECT_EQ(ctx.detector_measurement_indices->at(0)[1], 1);
+  const auto &trace = ctx.kernelTrace;
+  for (std::size_t i = 0; const auto &instruction : trace) {
+    if (i == 0) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 0)});
+    } else if (i == 1) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 1)});
+    } else if (i == 2) {
+      EXPECT_EQ(instruction.name, "detector");
+      EXPECT_EQ(instruction.params, (std::vector<double>{-2.0, -1.0}));
+    } else {
+      FAIL() << "Unexpected instruction at index " << i;
+    }
+    i++;
+  }
 }
 
 CUDAQ_TEST(KernelsTester, detectorTester_loops) {
@@ -548,18 +574,41 @@ CUDAQ_TEST(KernelsTester, detectorTester_loops) {
       }
     }
   };
-  cudaq::ExecutionContext ctx("tracks");
+  cudaq::ExecutionContext ctx("tracer");
   cudaq::get_platform().set_exec_ctx(&ctx);
   simple_test{}();
   cudaq::get_platform().reset_exec_ctx();
-  ASSERT_TRUE(ctx.detector_measurement_indices);
-  EXPECT_EQ(ctx.detector_measurement_indices->size(), 20);
-  for (int i = 0; i < 20; i++) {
-    // 2 measurements per detector
-    EXPECT_EQ(ctx.detector_measurement_indices->at(i).size(), 2);
-    // E.g. 0,2 / 1,3 / 4,6 / 5,7 / ...
-    EXPECT_EQ(ctx.detector_measurement_indices->at(i)[0], i);
-    EXPECT_EQ(ctx.detector_measurement_indices->at(i)[1], i + 2);
+  for (const auto &instruction : ctx.kernelTrace) {
+    std::cout << instruction.name << std::endl;
+  }
+  const auto &trace = ctx.kernelTrace;
+  for (std::size_t i = 0; const auto &instruction : trace) {
+    if (i == 0) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 0)});
+    } else if (i == 1) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 1)});
+    } else if (i >= 2 && (i - 2) % 4 == 0) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 0)});
+    } else if (i >= 2 && (i - 2) % 4 == 1) {
+      EXPECT_EQ(instruction.name, "mz");
+      EXPECT_EQ(instruction.targets,
+                std::vector<cudaq::QuditInfo>{cudaq::QuditInfo(2, 1)});
+    } else if (i >= 2 && (i - 2) % 4 == 2) {
+      EXPECT_EQ(instruction.name, "detector");
+      EXPECT_EQ(instruction.params, (std::vector<double>{-4.0, -2.0}));
+    } else if (i >= 2 && (i - 2) % 4 == 3) {
+      EXPECT_EQ(instruction.name, "detector");
+      EXPECT_EQ(instruction.params, (std::vector<double>{-3.0, -1.0}));
+    } else {
+      FAIL() << "Unexpected instruction at index " << i;
+    }
+    i++;
   }
 }
 #endif
