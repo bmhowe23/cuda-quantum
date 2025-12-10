@@ -11,14 +11,6 @@ import pytest
 import os
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setTarget():
-    old_target = cudaq.get_target()
-    cudaq.set_target('stim')
-    yield
-    cudaq.set_target(old_target)
-
-
 def test_basic():
 
     @cudaq.kernel
