@@ -299,6 +299,8 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
     if (numMeasures == 0)
       return detector.emitOpError("must have at least one measure");
 
+    // The number of measures is either a std::vector<int64_t> size (runtime) or
+    // an integer (compile time known based on the number of arguments).
     Value numMeasuresVal;
     if (isa<cudaq::cc::StdvecType>(measures[0].getType())) {
       numMeasuresVal = rewriter.create<cudaq::cc::StdvecSizeOp>(
@@ -325,9 +327,6 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
       Value buffer =
           rewriter.create<cudaq::cc::AllocaOp>(loc, i64Ty, numMeasuresVal);
       auto ptrI64Ty = cudaq::cc::PointerType::get(i64Ty);
-
-      // The buffer is a pointer to an array, but the runtime function expects a
-      // pointer to i64.
       bufferPtr = rewriter.create<cudaq::cc::CastOp>(loc, ptrI64Ty, buffer);
 
       for (auto iter : llvm::enumerate(measures)) {
@@ -340,7 +339,8 @@ struct DetectorOpRewrite : public OpConversionPattern<quake::DetectorOp> {
           m = rewriter.create<cudaq::cc::CastOp>(
               loc, i64Ty, m, cudaq::cc::CastOpMode::Unsigned);
         else if (width > 64)
-          m = rewriter.create<cudaq::cc::CastOp>(loc, i64Ty, m);
+          return detector.emitOpError(
+              "measure integer width must be less <= 64 bits");
 
         auto ptr = rewriter.create<cudaq::cc::ComputePtrOp>(
             loc, ptrI64Ty, buffer, ArrayRef<cudaq::cc::ComputePtrArg>{i});
