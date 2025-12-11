@@ -1656,9 +1656,6 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
           }
         }
 
-        // Print the type of the argument
-        llvm::errs() << "Argument type: ";
-        aTy.print(llvm::errs());
         reportClangError(x, mangler, "detector argument types not supported: ");
         return false;
       }
