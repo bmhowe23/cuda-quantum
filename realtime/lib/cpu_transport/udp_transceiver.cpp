@@ -189,30 +189,38 @@ private:
     }
   }
 
-  // Ship any published TX slot to the peer as one full-stride datagram
-  // (mirroring the RoCE TX SGE, which covers the whole slot) and clear it.
+  // Ship published TX slots to the peer as one full-stride datagram each
+  // (mirroring the RoCE TX SGE, which covers the whole slot) and clear them.
+  //
+  // Slots are consumed in FIFO cursor order, NOT by index scan: both
+  // producers (the udp device_call channel and a daemon mirroring request
+  // slots to response slots) publish slots strictly round-robin, so cursor
+  // order equals publish order. An index scan reorders any publish burst
+  // that spans the ring wrap (slot N-1 and slot 0 pending together get sent
+  // 0 first) -- fire-and-forget device_calls (enqueue_syndromes,
+  // reset_decoder) then arrive at the peer out of program order, violating
+  // the decoding server's in-order message contract
+  // (decoder_server_runtime.md, Message ordering).
   void txLoop() {
+    unsigned cursor = 0;
     while (running) {
-      bool sent_any = false;
-      for (unsigned slot = 0; slot < num_pages; ++slot) {
-        const std::uint64_t value = load_flag(&tx_flags[slot]);
-        if (value == 0)
-          continue;
-        const std::uint8_t *tx_slot = tx_data + slot * page_size;
-        if (value == reinterpret_cast<std::uint64_t>(tx_slot)) {
-          std::lock_guard<std::mutex> lock(peer_mutex);
-          if (have_peer)
-            ::sendto(fd, tx_slot, page_size, 0,
-                     reinterpret_cast<const sockaddr *>(&peer_addr),
-                     sizeof(peer_addr));
-        }
-        // Non-address values (in-flight/error sentinels) are recycled too;
-        // this transport has no side channel to report them.
-        store_flag(&tx_flags[slot], 0);
-        sent_any = true;
-      }
-      if (!sent_any)
+      const std::uint64_t value = load_flag(&tx_flags[cursor]);
+      if (value == 0) {
         std::this_thread::sleep_for(std::chrono::microseconds(50));
+        continue;
+      }
+      const std::uint8_t *tx_slot = tx_data + cursor * page_size;
+      if (value == reinterpret_cast<std::uint64_t>(tx_slot)) {
+        std::lock_guard<std::mutex> lock(peer_mutex);
+        if (have_peer)
+          ::sendto(fd, tx_slot, page_size, 0,
+                   reinterpret_cast<const sockaddr *>(&peer_addr),
+                   sizeof(peer_addr));
+      }
+      // Non-address values (in-flight/error sentinels) are recycled too;
+      // this transport has no side channel to report them.
+      store_flag(&tx_flags[cursor], 0);
+      cursor = (cursor + 1) % num_pages;
     }
   }
 
